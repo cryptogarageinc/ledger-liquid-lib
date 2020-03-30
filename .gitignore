@@ -102,3 +102,8 @@ dist
 
 # TernJS port file
 .tern-port
+
+# custom
+/src_btc
+/node_modules/
+/example

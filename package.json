@@ -1,0 +1,43 @@
+{
+  "name": "ledger-liquid-lib",
+  "version": "1.0.0",
+  "description": "Ledger Hardware Wallet Liquid Wrapper Library",
+  "keywords": [
+    "Ledger",
+    "LedgerWallet",
+    "liquid",
+    "Elements",
+    "NanoS",
+    "Hardware Wallet"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cryptogarageinc/ledger-liquid-lib"
+  },
+  "main": "index.js",
+  "module": "index.js",
+  "dependencies": {
+    "@types/node": "^13.7.0",
+    "@ledgerhq/hw-transport-node-hid": "^5.11.0",
+    "big-integer": "^1.6.26",
+    "cfd-js": "git+https://github.com/cryptogarageinc/cfd-js.git#v0.0.21"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^2.23.0",
+    "@typescript-eslint/parser": "^2.23.0",
+    "eslint": "*",
+    "eslint-config-google": "*",
+    "jest": "*",
+    "ts-node": "^8.8.1",
+    "typescript": "^3.8.3",
+    "typescript-json-schema": "^0.42.0",
+    "npm-run-all": "^4.1.5",
+    "run-script-os": "^1.0.5"
+  },
+  "scripts": {
+    "ts_example": "ts-node example_ts.ts",
+    "example": "node example.js",
+    "format": "eslint --ext .js,.ts *.ts *.js src/ --fix",
+    "eslint_check": "eslint --ext .js,.ts *.ts *.js src/"
+  }
+}

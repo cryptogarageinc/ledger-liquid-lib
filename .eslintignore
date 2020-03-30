@@ -1,0 +1,9 @@
+# auto generated files
+wrap_js/build/**
+wrap_js/wally.js
+
+# external project
+external/
+
+# local tool file
+tools/
