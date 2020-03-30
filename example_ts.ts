@@ -45,9 +45,9 @@ async function example() {
   console.log('pubkey3 => ', pubkey3);
   console.log('pubkey4 => ', pubkey4);
 
-  const authPubkey = '04b85b0e5f5b41f1a95bbf9a83edd95c741223c6d9dc5fe607de18f015684ff56ec359705fcf9bbeb1620fb458e15e3d99f23c6f5df5e91e016686371a65b16f0c';
-  const setupRet = await liquidLib.setupHeadlessAuthorization(authPubkey);
-  console.log('--HEADLESS LIQUID SEND AUTHORIZATION PUBLIC KEY --\n', setupRet);
+  // const authPubkey = '04b85b0e5f5b41f1a95bbf9a83edd95c741223c6d9dc5fe607de18f015684ff56ec359705fcf9bbeb1620fb458e15e3d99f23c6f5df5e91e016686371a65b16f0c';
+  // const setupRet = await liquidLib.setupHeadlessAuthorization(authPubkey);
+  // console.log('--HEADLESS LIQUID SEND AUTHORIZATION PUBLIC KEY --\n', setupRet);
 
   // eslint-disable-next-line prefer-const
   let hashType = 'p2wsh';
