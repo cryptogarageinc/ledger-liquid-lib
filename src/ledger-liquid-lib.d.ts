@@ -16,7 +16,8 @@ export interface UtxoData {
 export interface WalletUtxoData extends UtxoData {
   bip32Path: string; // key-1(bip32 path)
   // key-2(outpoint)
-  descriptor: string;
+  descriptor?: string; // output descriptor. Only one of the redeemScript is set. pubkey-hash is unused.
+  redeemScript?: string; // redeem script. Only one of the descriptor is set. pubkey-hash is unused.
 }
 
 export interface ResponseInfo {
