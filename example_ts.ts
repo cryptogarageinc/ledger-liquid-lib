@@ -13,10 +13,11 @@ async function example() {
   const pubkeyHashType = 'p2sh-p2wpkh';
   const blindOpt = {blind1: true, blind2: true};
   // eslint-disable-next-line prefer-const
-  let tx2InputCount = 1;
+  let tx2InputCount = 2;
   // eslint-disable-next-line prefer-const
   let addSignAddr4 = false;
   const asset1 = '5ac9f65c0efcc4775e0baec4ec03abdde22473cd3cf33c0419ca290e0751b225';
+  const authorizationPrivkey = '47ab8b0e5f8ea508808f9e03b804d623a7cb81cbf1f39d3e976eb83f9284ecde';
 
   // connect wait test
   const liquidLib = new LedgerLiquidWrapper(networkType);
@@ -360,7 +361,6 @@ async function example() {
   });
   console.log('SerializeLedgerFormat =', authorizationHash);
 
-  const authorizationPrivkey = '47ab8b0e5f8ea508808f9e03b804d623a7cb81cbf1f39d3e976eb83f9284ecde';
   const authSig = cfdjs.CalculateEcSignature({
     sighash: authorizationHash.sha256,
     privkeyData: {
