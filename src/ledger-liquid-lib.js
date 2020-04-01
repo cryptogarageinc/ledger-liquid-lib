@@ -552,7 +552,6 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
 
   async getAddress(bip32Path, addressFormat) {
     let addressRet;
-    let ctKeyRet;
     const pubkeyRet = await this.getWalletPublicKey(bip32Path);
     let result = pubkeyRet;
     if (pubkeyRet.success) {
@@ -571,7 +570,6 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
         isElements: true,
         hashType: hashType,
       });
-      ctKeyRet = await this.getConfidentialAddress(addressRet.address);
       result = pubkeyRet;
     }
     return {
@@ -581,34 +579,6 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       publicKey: compressPubkey(pubkeyRet.pubkey),
       chainCode: pubkeyRet.chainCode,
       address: (!addressRet) ? '' : addressRet.address,
-      confidentialAddress: (!ctKeyRet) ? '' : ctKeyRet.confidentialAddress,
-      confidentialKey: (!ctKeyRet) ? '' : ctKeyRet.confidentialKey,
-    };
-  }
-
-  async getConfidentialAddress(address) {
-    const addrInfo = cfdjs.GetAddressInfo({
-      address: address,
-      isElements: true,
-    });
-    const result = await liquidGetPublicBlindingKey(
-        this.transport, addrInfo.lockingScript);
-    let confidentialAddress = '';
-    let confidentialKey = '';
-    if (result.errorCode === 0x9000) {
-      confidentialKey = compressPubkey(result.confidentialKey);
-      const ctAddrRet = cfdjs.GetConfidentialAddress({
-        unblindedAddress: address,
-        key: confidentialKey,
-      });
-      confidentialAddress = ctAddrRet.confidentialAddress;
-    }
-    return {
-      success: (result.errorCode === 0x9000),
-      errorCode: result.errorCode,
-      errorMessage: (result.errorCode === 0x9000) ? '' : 'other error',
-      confidentialAddress: confidentialAddress,
-      confidentialKey: confidentialKey,
     };
   }
 

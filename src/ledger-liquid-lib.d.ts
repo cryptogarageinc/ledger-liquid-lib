@@ -108,15 +108,6 @@ export class LedgerLiquidWrapper {
   getAddress(bip32Path: string, addressType: AddressType):
     Promise<GetAddressResponse>;
 
-  /*
-   * Get confidential address with ledger wallet.
-   *
-   * @param address address.
-   * @returns GetConfidentialAddressResponse wrapped promise.
-   */
-  getConfidentialAddress(address: string):
-    Promise<GetConfidentialAddressResponse>;
-
   /**
    * Get signed signature.
    *

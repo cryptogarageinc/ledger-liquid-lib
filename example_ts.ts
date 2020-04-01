@@ -5,19 +5,55 @@ import * as ledgerLibDefine from './src/ledger-liquid-lib-defines';
 
 process.on('unhandledRejection', console.dir);
 
+let hashType = 'p2sh-p2wpkh'; // 'p2sh-p2wsh';
+const blindOpt = {blind1: true, blind2: true};
+let networkType = ledgerLibDefine.NetworkType.LiquidV1;
+// eslint-disable-next-line prefer-const
+let tx2InputCount = 2;
+// eslint-disable-next-line prefer-const
+let addSignAddr4 = false;
+let signedTest = false;
+let signedAddTest = false;
+let authorizationPrivkey = '47ab8b0e5f8ea508808f9e03b804d623a7cb81cbf1f39d3e976eb83f9284ecde';
+let mnemonic = '';
+// mnemonic = 'call node debug-console.js ledger hood festival pony outdoor always jeans page help symptom adapt obtain image bird duty damage find sense wasp box mail vapor plug general kingdom';
+
+for (let i = 2; i < process.argv.length; i++) {
+  if (process.argv[i]) {
+    if (process.argv[i] === '-r') {
+      networkType = ledgerLibDefine.NetworkType.Regtest;
+    } else if (process.argv[i] === '-nb1') {
+      blindOpt.blind1 = false;
+    } else if (process.argv[i] === '-nb2') {
+      blindOpt.blind2 = false;
+    } else if (process.argv[i] === '-s2') {
+      addSignAddr4 = true;
+    } else if (process.argv[i] === '-t') {
+      signedTest = true;
+    } else if (process.argv[i] === '-ta') {
+      signedAddTest = true;
+    } else if (i+1 < process.argv.length) {
+      if (process.argv[i] === '-h') {
+        ++i;
+        hashType = process.argv[i];
+      } else if (process.argv[i] === '-a') {
+        ++i;
+        if (process.argv[i].length === 64) {
+          authorizationPrivkey = process.argv[i];
+        }
+      } else if (process.argv[i] === '-n') {
+        ++i;
+        mnemonic = process.argv[i];
+      }
+    }
+  }
+}
+
 async function example() {
   // const addrType = ledgerLibDefine.AddressType.Bech32;
-  const networkType = ledgerLibDefine.NetworkType.LiquidV1;
 
-  const hashType = 'p2sh-p2wpkh'; // 'p2sh-p2wsh';
   const pubkeyHashType = 'p2sh-p2wpkh';
-  const blindOpt = {blind1: true, blind2: true};
-  // eslint-disable-next-line prefer-const
-  let tx2InputCount = 2;
-  // eslint-disable-next-line prefer-const
-  let addSignAddr4 = false;
   const asset1 = '5ac9f65c0efcc4775e0baec4ec03abdde22473cd3cf33c0419ca290e0751b225';
-  const authorizationPrivkey = '47ab8b0e5f8ea508808f9e03b804d623a7cb81cbf1f39d3e976eb83f9284ecde';
 
   // connect wait test
   const liquidLib = new LedgerLiquidWrapper(networkType);
@@ -61,7 +97,7 @@ async function example() {
 
   const pubkey1 = addr1.publicKey;
   const pubkey2 = addr2.publicKey;
-  const pubkey3 = addr3.publicKey;
+  let pubkey3 = addr3.publicKey;
   const pubkey4 = addr4.publicKey;
   console.log('pubkey1 => ', pubkey1);
   console.log('pubkey2 => ', pubkey2);
@@ -94,7 +130,7 @@ async function example() {
     'hashType': pubkeyHashType,
   });
   console.log('address2 => ', address2);
-  const address4 = cfdjs.CreateAddress({
+  let address4 = cfdjs.CreateAddress({
     'keyData': {
       'hex': pubkey4,
       'type': 'pubkey',
@@ -105,12 +141,16 @@ async function example() {
   });
   console.log('address4 => ', address4);
 
+  const testPubkey4 = '030fa835a11a2cb01c58e2358dbdcc6d85e35cb2a38ca3d3d660aadb4bda2ad7f9';
+  const testPrivkey4 = '7df5b968dee8f54c4b3cacf0386a4cab0eb7f6a10fc15f3b647bda227f4111b7';
+
   let isScriptHash = false;
   let redeemScript;
   let scriptSigSegwit;
   let address;
   let descriptor = '';
   let descriptor4 = '';
+  let privkey3Hex = '';
   if ((hashType === 'p2sh-p2wpkh') || (hashType === 'p2wpkh')) {
     const address3 = cfdjs.CreateAddress({
       'keyData': {
@@ -131,6 +171,42 @@ async function example() {
     if (hashType === 'p2sh-p2wpkh') {
       descriptor = `sh(${descriptor})`;
       descriptor4 = `sh(${descriptor4})`;
+    }
+
+    if (signedTest) {
+      tx2InputCount = 2;
+      // 44h/0h/0h/0/0
+      // xprvA35Stvys6RBQD5YqqfWyiyZSVE6JCVwEea37zrG6MsxaZ7xbCUAvbQzPYNddJ2QGBxea7jHvZh6NyKMBC97wspmZRHQqnHnevkhwy78Cehg
+      // privkey: L1YRuEojez8mj6AsEPVA74Kvv7oqCUyzaWLLKrM8NZ46qr4FhLx
+      //   (hex): 80fabf46d8e9dd12fc59299f61a7638bac33d7d125677a37bcb4b3a0e32bb23f
+      // pubkey: '021a8cffee67e4a5d8e9cfe0e6dbcc86484b425e93508522224c32bbba96fb6d82'
+      pubkey3 = '021a8cffee67e4a5d8e9cfe0e6dbcc86484b425e93508522224c32bbba96fb6d82';
+      privkey3Hex = '80fabf46d8e9dd12fc59299f61a7638bac33d7d125677a37bcb4b3a0e32bb23f';
+      address = cfdjs.CreateAddress({
+        'keyData': {
+          'hex': pubkey3,
+          'type': 'pubkey',
+        },
+        'network': networkType,
+        'isElements': true,
+        'hashType': hashType,
+      });
+      address4 = cfdjs.CreateAddress({
+        'keyData': {
+          'hex': testPubkey4,
+          'type': 'pubkey',
+        },
+        'network': networkType,
+        'isElements': true,
+        'hashType': hashType,
+      });
+
+      descriptor = `wpkh(${pubkey3})`;
+      descriptor4 = `wpkh(${testPubkey4})`;
+      if (hashType === 'p2sh-p2wpkh') {
+        descriptor = `sh(${descriptor})`;
+        descriptor4 = `sh(${descriptor4})`;
+      }
     }
   } else if ((hashType === 'p2sh-p2wsh') || (hashType === 'p2wsh')) {
     isScriptHash = true;
@@ -173,13 +249,23 @@ async function example() {
     key: confidentialKey,
   });
   console.log('ctAddr => ', ctAddr);
-  // const ctAddr = await liquidLib.getConfidentialAddress(address.address);
-  // console.log('ctAddr => ', ctAddr);
-  // const confidentialKey = ctAddr.confidentialKey;
-  const ctAddr1 = await liquidLib.getConfidentialAddress(address1.address);
+
+  // const blindingKey1 = '0e8ef84e19065269a8ebd92232cab53f21b0f0d31c42d824a5a9aa9c528e9597';
+  const confidentialKey1 = '03fd456b187343c9ff4e18ab9d88980b36c0b1a64e862433cfd811b22e855760a4';
+  const ctAddr1 = cfdjs.GetConfidentialAddress({
+    unblindedAddress: address1.address,
+    key: confidentialKey1,
+  });
   console.log('ctAddr1 => ', ctAddr1);
-  const ctAddr2 = await liquidLib.getConfidentialAddress(address2.address);
+
+  // const blindingKey2 = 'ff95155b8f7d9b8b7ba35d9a5237fe75bb62ba82996c69d493a70105f7f74e0d';
+  const confidentialKey2 = '0269d5b8d1c53d4d42ec80b9f787c39324a5d0572182724b4e61e34380ca23ce15';
+  const ctAddr2 = cfdjs.GetConfidentialAddress({
+    unblindedAddress: address2.address,
+    key: confidentialKey2,
+  });
   console.log('ctAddr2 => ', ctAddr2);
+
   const blindingKey4 = 'b91d9b51d4949b896e8dd911285f3d79a84d2ee1a5230014af3232bfef746721';
   const confidentialKey4 = '036e77ff8109027c246125babd5d0852809367ea3d68704f6d8c855986d8521661';
   const ctAddr4 = cfdjs.GetConfidentialAddress({
@@ -280,8 +366,8 @@ async function example() {
   };
   if (tx2InputCount === 2) {
     tx2Data.txins.push({
-      txid: utxo.txid,
-      vout: 1,
+      txid: utxo2.txid,
+      vout: utxo2.vout,
       sequence: 4294967295,
     });
   }
@@ -353,87 +439,160 @@ async function example() {
     mainchainNetwork: mainchainNwType});
   console.log('*** blind dectx2 ***\n', JSON.stringify(dectx2, null, '  '));
 
-  // get authorization start ---------------------------------
-  console.log('*** calc authorization start ***');
-  const authorizationHash = cfdjs.SerializeLedgerFormat({
-    tx: blindTx2.hex,
-    isAuthorization: true,
-  });
-  console.log('SerializeLedgerFormat =', authorizationHash);
-
-  const authSig = cfdjs.CalculateEcSignature({
-    sighash: authorizationHash.sha256,
-    privkeyData: {
-      privkey: authorizationPrivkey,
-      wif: false,
-      network: 'mainnet',
-    },
-    isGrindR: false,
-  });
-  const authDerSigData = cfdjs.EncodeSignatureByDer({
-    signature: authSig.signature,
-    sighashType: 'all'});
-  const authDerSig = authDerSigData.signature.substring(
-      0, authDerSigData.signature.length - 2);
-  console.log(`*** calc authorization end. [${authDerSig}] ***`);
-  // get authorization end ---------------------------------
-
-  const utxoList = [{
-    txid: utxo.txid,
-    vout: utxo.vout,
-    amount: utxo.amount,
-    valueCommitment: utxo.value,
-  }];
-  if (tx2InputCount === 2) {
-    utxoList.push({
-      txid: utxo2.txid,
-      vout: utxo2.vout,
-      amount: utxo2.amount,
-      valueCommitment: utxo2.value,
+  let sigRet;
+  if (signedTest) {
+    const signed = cfdjs.SignWithPrivkey({
+      isElements: true,
+      tx: blindTx2.hex,
+      txin: {
+        txid: utxo2.txid,
+        vout: utxo2.vout,
+        privkey: testPrivkey4,
+        hashType: hashType,
+        amount: utxo2.amount,
+        confidentialValueCommitment: utxo2.value,
+      },
     });
-  }
-  let walletUtxoList = [{
-    bip32Path: PATH3,
-    txid: utxo.txid,
-    vout: utxo.vout,
-    amount: utxo.amount,
-    valueCommitment: utxo.value,
-    redeemScript: redeemScript,
-  }];
-  if (!isScriptHash && (tx2InputCount === 2) && addSignAddr4) {
-    walletUtxoList.push({
-      bip32Path: PATH4,
-      txid: utxo2.txid,
-      vout: utxo2.vout,
-      amount: utxo2.amount,
-      valueCommitment: utxo2.value,
-      redeemScript: '',
+    blindTx2 = signed;
+    if (signedAddTest) {
+      blindTx2 = cfdjs.SignWithPrivkey({
+        isElements: true,
+        tx: blindTx2.hex,
+        txin: {
+          txid: utxo.txid,
+          vout: utxo.vout,
+          privkey: privkey3Hex,
+          pubkey: pubkey3,
+          hashType: hashType,
+          amount: utxo.amount,
+          confidentialValueCommitment: utxo.value,
+        },
+      });
+    }
+    console.log('\n===== VerifySign =====');
+    const reqVerifyJson = {
+      tx: blindTx2.hex,
+      isElements: true,
+      txins: [{
+        txid: utxo2.txid,
+        vout: utxo2.vout,
+        address: address4.address,
+        amount: utxo2.amount,
+        descriptor: descriptor4,
+        confidentialValueCommitment: utxo2.value,
+      }],
+    };
+    if (signedAddTest) {
+      reqVerifyJson.txins.push({
+        txid: utxo.txid,
+        vout: utxo.vout,
+        address: address.address,
+        amount: utxo.amount,
+        descriptor: descriptor,
+        confidentialValueCommitment: utxo.value,
+      });
+    }
+    const verifyRet = cfdjs.VerifySign(reqVerifyJson);
+    console.log('\n*** VerifySign ***\n', JSON.stringify(verifyRet, null, '  '));
+    if (!verifyRet.success) {
+      const decSignedTx = cfdjs.ElementsDecodeRawTransaction({
+        hex: blindTx2.hex, network: networkType,
+        mainchainNetwork: mainchainNwType});
+      console.log('*** blind decSignedTx2 ***\n',
+          JSON.stringify(decSignedTx, null, '  '));
+      console.log('\n*** VerifySignRequest ***\n',
+          reqVerifyJson.txins);
+      console.log('\n*** VerifySign Failed. ***\n');
+    } else if (signedAddTest) {
+      console.log('\n*** Signed1 Tx ***\n', signed);
+      console.log('\n*** Signed2 Tx ***\n', blindTx2);
+    } else {
+      console.log('\n*** Signed Tx ***\n', blindTx2);
+    }
+    return;
+  } else {
+    // get authorization start ---------------------------------
+    console.log('*** calc authorization start ***');
+    const authorizationHash = cfdjs.SerializeLedgerFormat({
+      tx: blindTx2.hex,
+      isAuthorization: true,
     });
-  }
-  if (isScriptHash) {
-    walletUtxoList = [{
+    console.log('SerializeLedgerFormat =', authorizationHash);
+
+    const authSig = cfdjs.CalculateEcSignature({
+      sighash: authorizationHash.sha256,
+      privkeyData: {
+        privkey: authorizationPrivkey,
+        wif: false,
+        network: 'mainnet',
+      },
+      isGrindR: false,
+    });
+    const authDerSigData = cfdjs.EncodeSignatureByDer({
+      signature: authSig.signature,
+      sighashType: 'all'});
+    const authDerSig = authDerSigData.signature.substring(
+        0, authDerSigData.signature.length - 2);
+    console.log(`*** calc authorization end. [${authDerSig}] ***`);
+    // get authorization end ---------------------------------
+
+    const utxoList = [{
+      txid: utxo.txid,
+      vout: utxo.vout,
+      amount: utxo.amount,
+      valueCommitment: utxo.value,
+    }];
+    if (tx2InputCount === 2) {
+      utxoList.push({
+        txid: utxo2.txid,
+        vout: utxo2.vout,
+        amount: utxo2.amount,
+        valueCommitment: utxo2.value,
+      });
+    }
+    let walletUtxoList = [{
       bip32Path: PATH3,
       txid: utxo.txid,
       vout: utxo.vout,
       amount: utxo.amount,
       valueCommitment: utxo.value,
       redeemScript: redeemScript,
-    }, {
-      bip32Path: PATH2,
-      txid: utxo.txid,
-      vout: utxo.vout,
-      amount: utxo.amount,
-      valueCommitment: utxo.value,
-      redeemScript: redeemScript,
     }];
+    if (!isScriptHash && (tx2InputCount === 2) && addSignAddr4) {
+      walletUtxoList.push({
+        bip32Path: PATH4,
+        txid: utxo2.txid,
+        vout: utxo2.vout,
+        amount: utxo2.amount,
+        valueCommitment: utxo2.value,
+        redeemScript: '',
+      });
+    }
+    if (isScriptHash) {
+      walletUtxoList = [{
+        bip32Path: PATH3,
+        txid: utxo.txid,
+        vout: utxo.vout,
+        amount: utxo.amount,
+        valueCommitment: utxo.value,
+        redeemScript: redeemScript,
+      }, {
+        bip32Path: PATH2,
+        txid: utxo.txid,
+        vout: utxo.vout,
+        amount: utxo.amount,
+        valueCommitment: utxo.value,
+        redeemScript: redeemScript,
+      }];
+    }
+    console.log('*** utxoList start. ***', utxoList);
+    console.log('*** getSignature start. ***');
+    sigRet = await liquidLib.getSignature(blindTx2.hex,
+        utxoList, walletUtxoList, authDerSig);
+    console.log(`*** getSignature end. ***`,
+        JSON.stringify(sigRet, (key, value) =>
+            typeof value === 'bigint' ? value.toString() : value, '  '));
   }
-  console.log('*** utxoList start. ***', utxoList);
-  console.log('*** getSignature start. ***');
-  const sigRet = await liquidLib.getSignature(blindTx2.hex,
-      utxoList, walletUtxoList, authDerSig);
-  console.log(`*** getSignature end. ***`,
-      JSON.stringify(sigRet, (key, value) =>
-          typeof value === 'bigint' ? value.toString() : value, '  '));
 
   // FIXME(k-matsuzawa): wait for blinding
   // const ret1 = await liquidGetValueBlindingFactor(transport, 0, true);
