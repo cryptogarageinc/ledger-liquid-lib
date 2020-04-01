@@ -1,10 +1,7 @@
 /* eslint-disable require-jsdoc */
+// import * as TransportNodeHid from '@ledgerhq/hw-transport-node-hid';
+const TransportNodeHid = require('@ledgerhq/hw-transport-node-hid').default;
 const cfdjs = require('cfd-js');
-
-// FIXME やりたいこと
-// - Pubkeyの取得
-// - (Pubkeyに紐づく) signatureの取得
-// - 不明点：blind次第ではconfidentialKeyも。
 
 function convertErrorCode(buf) {
   return buf.readUInt16BE();
@@ -119,6 +116,7 @@ async function getWalletPublicKey(transport, path, option) {
   let chainCode = '';
   let pubkeyLength = 0;
   let addressLength = 0;
+  let address = '';
   if (exchangeRet.length > 2) {
     pubkeyLength = exchangeRet[0];
     if (pubkeyLength === 65) {
@@ -129,6 +127,11 @@ async function getWalletPublicKey(transport, path, option) {
     if (exchangeRet.length > (pubkeyLength + 1 + 2)) {
       // address length
       addressLength = exchangeRet[pubkeyLength + 1];
+      if (addressLength > 0) {
+        const addrOffset = pubkeyLength + 2;
+        address = exchangeRet.subarray(addrOffset, addrOffset + addressLength)
+            .toString();
+      }
     }
     if (exchangeRet.length >= (pubkeyLength + addressLength + 2 + 32 + 2)) {
       const codeChainOffset = pubkeyLength + addressLength + 2;
@@ -141,6 +144,7 @@ async function getWalletPublicKey(transport, path, option) {
     errorCode: convertErrorCode(result),
     pubkey: pubkey,
     chainCode: chainCode,
+    address: address,
   };
 }
 
@@ -159,8 +163,11 @@ async function liquidGetValueBlindingFactor(transport, outputIndex, isAbf) {
     exchangeRet.subarray(exchangeRet.length - 2);
   const key = (exchangeRet.length <= 2) ? Buffer.alloc(0) :
     exchangeRet.subarray(0, exchangeRet.length - 2);
-  console.log(`liquidGetValueBlindingFactor = `, result);
-  return key.toString('hex');
+  // console.log(`liquidGetValueBlindingFactor = `, result);
+  return {
+    errorCode: convertErrorCode(result),
+    key: key.toString('hex'),
+  };
 }
 
 // LIQUID GET BLINDING FACTOR
@@ -175,35 +182,67 @@ async function liquidGetTXBlindingKey(transport) {
     exchangeRet.subarray(exchangeRet.length - 2);
   const key = (exchangeRet.length <= 2) ? Buffer.alloc(0) :
    exchangeRet.subarray(0, exchangeRet.length - 2);
-  console.log(`liquidGetTXBlindingKey = `, result);
+  // console.log(`liquidGetTXBlindingKey = `, result);
   // liquidGetTXBlindingKey =  <Buffer 67 00> -> INCORRECT_LENGTH
-  return key.toString('hex');
+  return {
+    errorCode: convertErrorCode(result),
+    key: key.toString('hex'),
+  };
 }
 
 // LIQUID GET PUBLIC BLINDING KEY
-async function liquidGetPublicBlindingKey(transport,
-    authorizationPublicKeyHex) {
+async function liquidGetPublicBlindingKey(transport, scriptPubkeyHex) {
   const CLA = 0xe0;
   const LIQUID_GET_PUBLIC_BLINDING_KEY = 0xe2;
-  const scriptPubkey = Buffer.from(authorizationPublicKeyHex, 'hex');
-  const apdu = Buffer.concat([Buffer.from(
-      [CLA, LIQUID_GET_PUBLIC_BLINDING_KEY, 0, 0]),
-  Buffer.from([scriptPubkey.length]), scriptPubkey]);
+  const scriptPubkey = Buffer.from(scriptPubkeyHex, 'hex');
+  const apdu = Buffer.concat([
+    Buffer.from([CLA, LIQUID_GET_PUBLIC_BLINDING_KEY, 0, 0]),
+    Buffer.from([scriptPubkey.length]), scriptPubkey,
+  ]);
   const exchangeRet = await transport.exchange(apdu);
   const result = (exchangeRet.length <= 2) ? exchangeRet :
     exchangeRet.subarray(exchangeRet.length - 2);
   const confKey = (exchangeRet.length <= 2) ? Buffer.alloc(0) :
     exchangeRet.subarray(0, exchangeRet.length - 2);
-  console.log(`liquidGetPublicBlindingKey = `, result);
-  return confKey.toString('hex');
+  // console.log(`liquidGetPublicBlindingKey = `, result);
+  return {
+    errorCode: convertErrorCode(result),
+    confidentialKey: confKey.toString('hex'),
+  };
+}
+
+async function liquidGetCommitments(
+    transport, asset, value, outputIndex, vbf, abf) {
+  const CLA = 0xe0;
+  const LIQUID_GET_COMMITMENT = 0xe0;
+  const p1 = 0x03;
+  const indexBuffer = Buffer.alloc(4);
+  indexBuffer.writeUInt32BE(outputIndex, 0);
+  const valueBuf = convertValueFromAmount(value).subarray(1);
+  const assetBuf = Buffer.from(asset, 'hex');
+  const data = Buffer.concat([assetBuf, valueBuf,
+    indexBuffer, Buffer.from(vbf, 'hex'), Buffer.from(abf, 'hex')]);
+  // const response = await transport.send(0xe0, 0xe0, p1, 0x00, data);
+  const apdu = Buffer.concat([
+    Buffer.from([CLA, LIQUID_GET_COMMITMENT, p1, 0]),
+    Buffer.from([data.length]), data,
+  ]);
+  console.log('liquidGetCommitments send', apdu.toString('hex'));
+  const exchangeRet = await transport.exchange(apdu);
+  const result = (exchangeRet.length <= 2) ? exchangeRet :
+    exchangeRet.subarray(exchangeRet.length - 2);
+  const commitment = (exchangeRet.length <= 2) ?
+    Buffer.alloc(0) : exchangeRet.slice(32 + 32, -2);
+  return {
+    errorCode: convertErrorCode(result),
+    commitment: commitment.toString('hex'),
+  };
 }
 
 async function liquidSetupHeadless(transport, authorizationPublicKeyHex) {
   const ADM_CLA = 0xd0;
   const LIQUID_SETUP_HEADLESS = 0x02;
-  const authPubkey = authorizationPublicKeyHex;
-  // console.log('authPubkey => ', authPubkey);
-  const authPubkeyData = Buffer.from(authPubkey, 'hex');
+  const authPubkeyData = Buffer.from(authorizationPublicKeyHex, 'hex');
   const apdu = Buffer.concat(
       [Buffer.from([ADM_CLA, LIQUID_SETUP_HEADLESS, 0, 0]),
         Buffer.from([authPubkeyData.length]), authPubkeyData]);
@@ -217,15 +256,12 @@ async function sendHashInputStartCmd(transport, p1, p2, data) {
   const HASH_INPUT_START = 0x44;
   const apdu = Buffer.concat([Buffer.from([CLA, HASH_INPUT_START, p1, p2]),
     Buffer.from([data.length]), data]);
+  console.log('sendHashInputStartCmd send =', apdu.toString('hex'));
   const exchangeRet = await transport.exchange(apdu);
   const result = (exchangeRet.length <= 2) ? exchangeRet :
     exchangeRet.subarray(exchangeRet.length - 2);
   const resultData = (exchangeRet.length <= 2) ? Buffer.alloc(0) :
     exchangeRet.subarray(0, exchangeRet.length - 2);
-  console.log(`sendHashInputStartCmd(${p1},${p2}) = `, result);
-  if (exchangeRet.length > 2) {
-    console.log(' data: ', resultData);
-  }
   return {data: resultData, errorCode: convertErrorCode(result)};
 }
 
@@ -233,20 +269,19 @@ async function sendHashInputFinalizeFullCmd(transport, p1, p2, data) {
   // FIXME split send.
   const CLA = 0xe0;
   const HASH_INPUT_FINALIZE_FULL = 0x4a;
-  console.log(`sendHashInputFinalizeFullCmd send = `, data.toString('hex'));
   const apdu = Buffer.concat(
       [Buffer.from([CLA, HASH_INPUT_FINALIZE_FULL, p1, p2]),
         Buffer.from([data.length]), data]);
   const exchangeRet = await transport.exchange(apdu);
   const result = (exchangeRet.length <= 2) ? exchangeRet :
-   exchangeRet.subarray(exchangeRet.length - 2);
+    exchangeRet.subarray(exchangeRet.length - 2);
   const resultData = (exchangeRet.length <= 2) ? Buffer.alloc(0) :
-   exchangeRet.subarray(0, exchangeRet.length - 2);
-  // console.log(`sendHashInputFinalizeFullCmd(${p1},${p2}) = `, result);
-  if (exchangeRet.length > 2) {
-    // console.log(' data: ', resultData);
+    exchangeRet.subarray(0, exchangeRet.length - 2);
+  const ecode = convertErrorCode(result);
+  if (ecode != 0x9000) {
+    // console.log('sendHashInputFinalizeFullCmd recv: ', exchangeRet.toString('hex'));
   }
-  return {data: resultData, errorCode: convertErrorCode(result)};
+  return {data: resultData, errorCode: ecode};
 }
 
 async function sendHashSignCmd(transport, data) {
@@ -259,9 +294,7 @@ async function sendHashSignCmd(transport, data) {
    exchangeRet.subarray(exchangeRet.length - 2);
   const resultData = (exchangeRet.length <= 2) ? Buffer.alloc(0) :
    exchangeRet.subarray(0, exchangeRet.length - 2);
-  console.log(`sendHashSignCmd = `, result);
   if (exchangeRet.length > 2) {
-    console.log(' data: ', resultData);
     // mask 0xfe
     resultData[0] = resultData[0] & 0xfe;
   }
@@ -274,7 +307,7 @@ async function sendHashSignCmd(transport, data) {
 async function startUntrustedTransaction(transport, dectx, isContinue,
     amountValueList, inputIndex, targetRedeemScript) {
   let p1 = 0;
-  let p2 = (isContinue) ? 0x80 : 0x06;
+  const p2 = (isContinue) ? 0x80 : 0x06;
   const txinHead = 0x03;
 
   const version = Buffer.alloc(4);
@@ -282,11 +315,12 @@ async function startUntrustedTransaction(transport, dectx, isContinue,
   let apdu = Buffer.concat([version, getVarIntBuffer([dectx.vin.length])]);
   let errData = await sendHashInputStartCmd(transport, p1, p2, apdu);
   if (errData.errorCode != 0x9000) {
+    console.log('fail sendHashInputStartCmd', errData);
     return errData.errorCode;
   }
 
   p1 = 0x80;
-  p2 = 0x00;
+  // p2 = 0x00;
   for (let idx = 0; idx < dectx.vin.length; ++idx) {
     const header = Buffer.from([txinHead]);
     const txid = reverseBuffer(Buffer.from(dectx.vin[idx].txid, 'hex'));
@@ -304,17 +338,35 @@ async function startUntrustedTransaction(transport, dectx, isContinue,
     const sequence = Buffer.alloc(4);
     sequence.writeUInt32LE(dectx.vin[idx].sequence, 0);
     apdu = Buffer.concat([header, txid, vout, value,
-      getVarIntBuffer(script.length), script, sequence]);
+      getVarIntBuffer(script.length)]);
     errData = await sendHashInputStartCmd(transport, p1, p2, apdu);
-    if (errData.errorCode != 0x9000) break;
+    if (errData.errorCode != 0x9000) {
+      console.log('fail sendHashInputStartCmd2', errData);
+      break;
+    }
+    if (script.length !== 0) {
+      apdu = Buffer.concat([script, sequence]);
+      errData = await sendHashInputStartCmd(transport, p1, p2, apdu);
+      if (errData.errorCode != 0x9000) {
+        console.log('fail sendHashInputStartCmd2', errData);
+        break;
+      }
+    } else {
+      errData = await sendHashInputStartCmd(transport, p1, p2, sequence);
+      if (errData.errorCode != 0x9000) {
+        console.log('fail sendHashInputStartCmd2', errData);
+        break;
+      }
+    }
   }
   return errData.errorCode;
 }
 
-async function liquidFinalizeInputFull(transport, dectx, confidentialKeyList) {
+async function liquidFinalizeInputFull(transport, dectx) {
   let apdu = getVarIntBuffer(dectx.vout.length);
   let errData = await sendHashInputFinalizeFullCmd(transport, 0, 0, apdu);
   if (errData.errorCode != 0x9000) {
+    console.log('fail sendHashInputStartCmd2', errData);
     return errData.errorCode;
   }
 
@@ -334,9 +386,9 @@ async function liquidFinalizeInputFull(transport, dectx, confidentialKeyList) {
       errData = await sendHashInputFinalizeFullCmd(transport, 0, 0,
           Buffer.from(dectx.vout[idx].commitmentnonce, 'hex'));
       if (errData.errorCode != 0x9000) break;
-      errData = await sendHashInputFinalizeFullCmd(transport, 0, 0,
-          Buffer.from(confidentialKeyList[idx], 'hex'));
-      if (errData.errorCode != 0x9000) break;
+      // errData = await sendHashInputFinalizeFullCmd(
+      //     transport, 0, 0, Buffer.from([0])); // confidentialKey
+      // if (errData.errorCode != 0x9000) break;
     } else {
       const asset = reverseBuffer(Buffer.from(dectx.vout[idx].asset, 'hex'));
       apdu = Buffer.concat([
@@ -359,6 +411,9 @@ async function liquidFinalizeInputFull(transport, dectx, confidentialKeyList) {
     errData = await sendHashInputFinalizeFullCmd(transport, p1, 0, apdu);
     console.log(`liquidFinalizeInputFull = `, errData.data.toString('hex'));
     if (errData.errorCode != 0x9000) break;
+  }
+  if (errData.errorCode != 0x9000) {
+    console.log('liquidFinalizeInputFull ', errData);
   }
   return errData.errorCode;
 }
@@ -390,11 +445,9 @@ async function liquidProvideIssuanceInformation(transport, dectx) {
   const apdu = Buffer.concat(
       [Buffer.from([CLA, LIQUID_PROVIDE_ISSUANCE_INFORMATION, p1, 0]),
         Buffer.from([data.length]), data]);
-  console.log('liquidProvideIssuanceInformation send -> ', apdu.toString('hex'));
   const exchangeRet = await transport.exchange(apdu);
   const result = (exchangeRet.length <= 2) ? exchangeRet :
-   exchangeRet.subarray(exchangeRet.length - 2);
-  console.log(`liquidProvideIssuanceInformation(${p1}) = `, result);
+    exchangeRet.subarray(exchangeRet.length - 2);
   return convertErrorCode(result);
 /*
   def liquidProvideIssuanceInformation(self, issuanceInformation):
@@ -415,18 +468,59 @@ async function liquidProvideIssuanceInformation(transport, dectx) {
 }
 
 function compressPubkey(publicKey) {
+  if (!publicKey) return '';
   return cfdjs.GetCompressedPubkey({pubkey: publicKey}).pubkey;
 }
 
 const ledgerLiquidWrapper = class LedgerLiquidWrapper {
-  constructor(transport, networkType) {
+  constructor(networkType) {
+    this.transport = undefined;
     if ((networkType !== 'liquidv1') && (networkType !== 'regtest')) {
       throw new Error('illegal network type.');
     }
-    this.transport = transport;
     this.networkType = networkType;
     this.mainchainNetwork = (networkType === 'regtest') ?
         'regtest' : 'mainnet';
+  }
+
+  async connect(maxWaitTime = undefined, devicePath = undefined) {
+    const sleep = (msec) => new Promise(
+        (resolve) => setTimeout(resolve, msec));
+
+    const waitLimit = (typeof maxWaitTime === 'number') ? maxWaitTime : 0xffffffff;
+    const path = (typeof devicePath === 'string') ? devicePath : '';
+    const bip32Path = '44\'/0\'/0\'';
+    const notConnectedEcode = 0x6982;
+    let transport = undefined;
+    let count = 0;
+    let result;
+    let ecode = notConnectedEcode;
+    while ((ecode === notConnectedEcode) && (count < waitLimit)) {
+      try {
+        transport = await TransportNodeHid.open(path);
+
+        result = await getWalletPublicKey(transport, bip32Path, 0);
+        ecode = result.errorCode;
+        if (ecode === 0x9000) {
+          this.transport = transport;
+          break;
+        } else if (ecode !== notConnectedEcode) {
+          console.log('illegal error. ', result);
+          break;
+        }
+      } catch (e) {
+        // console.log(`connection fail. count=${count}`, e);
+      }
+      console.log(`connection fail. count=${count}`);
+      ++count;
+      await sleep(1000);
+    }
+
+    return {
+      success: (ecode === 0x9000),
+      errorCode: ecode,
+      errorMessage: (ecode === 0x9000) ? '' : 'other error',
+    };
   }
 
   getPublicKeyRedeemScript(publicKey) {
@@ -444,8 +538,9 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
 
   async getWalletPublicKey(bip32Path) {
     // TODO(k-matsuzawa): notfound liquid option(0x10, 0x11)
-    const p2 = 0; // = 0x10;
+    const p2 = 1; // = 0x10;
     const result = await getWalletPublicKey(this.transport, bip32Path, p2);
+    // console.log('getWalletPublicKey result =', result);
     return {
       success: (result.errorCode === 0x9000),
       errorCode: result.errorCode,
@@ -455,12 +550,67 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     };
   }
 
-  // async getWalletConfidentialAddress(address: string) {
-  //   return {
-  //     confidentialAddress: string,
-  //     confidentialKey: string,
-  //   };
-  // }
+  async getAddress(bip32Path, addressFormat) {
+    let addressRet;
+    let ctKeyRet;
+    const pubkeyRet = await this.getWalletPublicKey(bip32Path);
+    let result = pubkeyRet;
+    if (pubkeyRet.success) {
+      let hashType = 'p2sh-p2wpkh';
+      if (addressFormat === 'bech32') {
+        hashType = 'p2wpkh';
+      } else if (addressFormat === 'legacy') {
+        hashType = 'p2pkh';
+      }
+      addressRet = cfdjs.CreateAddress({
+        keyData: {
+          hex: pubkeyRet.publicKey,
+          type: 'pubkey',
+        },
+        network: this.networkType,
+        isElements: true,
+        hashType: hashType,
+      });
+      ctKeyRet = await this.getConfidentialAddress(addressRet.address);
+      result = pubkeyRet;
+    }
+    return {
+      success: (result.errorCode === 0x9000),
+      errorCode: result.errorCode,
+      errorMessage: (result.errorCode === 0x9000) ? '' : 'other error',
+      publicKey: compressPubkey(pubkeyRet.pubkey),
+      chainCode: pubkeyRet.chainCode,
+      address: (!addressRet) ? '' : addressRet.address,
+      confidentialAddress: (!ctKeyRet) ? '' : ctKeyRet.confidentialAddress,
+      confidentialKey: (!ctKeyRet) ? '' : ctKeyRet.confidentialKey,
+    };
+  }
+
+  async getConfidentialAddress(address) {
+    const addrInfo = cfdjs.GetAddressInfo({
+      address: address,
+      isElements: true,
+    });
+    const result = await liquidGetPublicBlindingKey(
+        this.transport, addrInfo.lockingScript);
+    let confidentialAddress = '';
+    let confidentialKey = '';
+    if (result.errorCode === 0x9000) {
+      confidentialKey = compressPubkey(result.confidentialKey);
+      const ctAddrRet = cfdjs.GetConfidentialAddress({
+        unblindedAddress: address,
+        key: confidentialKey,
+      });
+      confidentialAddress = ctAddrRet.confidentialAddress;
+    }
+    return {
+      success: (result.errorCode === 0x9000),
+      errorCode: result.errorCode,
+      errorMessage: (result.errorCode === 0x9000) ? '' : 'other error',
+      confidentialAddress: confidentialAddress,
+      confidentialKey: confidentialKey,
+    };
+  }
 
   async setupHeadlessAuthorization(authorizationPublicKey) {
     const ecode = await liquidSetupHeadless(this.transport,
@@ -478,14 +628,13 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     };
   }
 
-  async getSignature(proposalTransaction, txinUtxoList, walletUtxoList,
-      authorizationSignature) {
+  async getSignature(proposalTransaction, txinUtxoList,
+      walletUtxoList, authorizationSignature) {
     const dectx = cfdjs.ElementsDecodeRawTransaction({
       hex: proposalTransaction, network: this.network,
       mainchainNetwork: this.mainchainNetwork});
 
     const amountValueList = [];
-    const confidentialKeyList = [];
 
     const utxoList = txinUtxoList;
     for (const utxo of walletUtxoList) {
@@ -503,16 +652,17 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       }
       if (!isFind) {
         throw new Error('txin is not in the utxo list.');
+        // amountValueList.push(1); // dummy amount
       }
     }
     let ecode = 0;
     const signatureList = [];
 
+    console.log('amountValueList =', amountValueList);
     ecode = await startUntrustedTransaction(this.transport, dectx, false,
         amountValueList, 0, '');
     if (ecode === 0x9000) {
-      ecode = await liquidFinalizeInputFull(this.transport, dectx,
-          confidentialKeyList);
+      ecode = await liquidFinalizeInputFull(this.transport, dectx);
     }
     if (ecode === 0x9000) {
       ecode = await liquidProvideIssuanceInformation(this.transport, dectx);
@@ -523,7 +673,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       const sighashtype = 1;
       for (const utxo of walletUtxoList) {
         let targetIndex = -1;
-        for (const index = 0; index < dectx.vin.length; ++index) {
+        for (let index = 0; index < dectx.vin.length; ++index) {
           if ((dectx.vin[index].txid === utxo.txid) &&
               (dectx.vin[index].vout === utxo.vout)) {
             targetIndex = index;
@@ -552,15 +702,25 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
         }
 
         if (!redeemScript) {
-          const pubkey = await this.getWalletPublicKey(utxo.bip32Path);
-          redeemScript = this.getPublicKeyRedeemScript(pubkey);
+          const pubkeyRet = await this.getWalletPublicKey(utxo.bip32Path);
+          ecode = pubkeyRet.errorCode;
+          if (ecode !== 0x9000) {
+            break;
+          }
+          redeemScript = this.getPublicKeyRedeemScript(pubkeyRet.publicKey);
         }
 
         ecode = await startUntrustedTransaction(this.transport, dectx,
             true, amountValueList, targetIndex, redeemScript);
+        if (ecode !== 0x9000) {
+          break;
+        }
         const signatureRet = await untrustedHashSign(this.transport, dectx,
             utxo.bip32Path, authorizationSignature, sighashtype);
         ecode = signatureRet.errorCode;
+        if (ecode !== 0x9000) {
+          break;
+        }
         signatureList.push({
           utxoData: utxo,
           signature: signatureRet.signature,

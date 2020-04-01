@@ -1,9 +1,15 @@
 /* eslint-disable require-jsdoc */
-import TransportNodeHid from '@ledgerhq/hw-transport-node-hid';
+// import TransportNodeHid from '@ledgerhq/hw-transport-node-hid';
 
 export enum NetworkType {
   LiquidV1 = 'liquidv1',
   Regtest = 'regtest',
+}
+
+export enum AddressType {
+  Legacy = 'legacy',
+  P2shSegwit = 'p2sh-segwit',
+  Bech32 = 'bech32',
 }
 
 export interface UtxoData {
@@ -36,6 +42,11 @@ export interface GetConfidentialAddressResponse extends ResponseInfo {
   confidentialKey: string;
 }
 
+export interface GetAddressResponse extends
+    GetPublicKeyResponse, GetConfidentialAddressResponse {
+  address: string;
+}
+
 export interface SignatureData {
   utxoData: WalletUtxoData;
   signature: string;
@@ -46,15 +57,21 @@ export interface GetSignatureAddressResponse extends ResponseInfo {
 }
 
 export class LedgerLiquidWrapper {
-  constructor(transport: TransportNodeHid, network: NetworkType);
-
-  /*
-   * Get compressed public key.
-   *
-   * @param publicKey public key.
-   * @return compressed public key.
+  /**
+   * @constructor
+   * @param network network type.
    */
-  // compressPubkey(publicKey: string): string;
+  constructor(network: NetworkType);
+
+  /**
+   * connect device.
+   *
+   * @param maxWaitTime maximum waiting time (sec).
+   * @param devicePath target device path.
+   * @return error info.
+   */
+  connect(maxWaitTime: number | undefined, devicePath: string | undefined):
+    Promise<ResponseInfo>;
 
   /**
    * Get redeem script for public key.
@@ -81,14 +98,24 @@ export class LedgerLiquidWrapper {
    */
   getWalletPublicKey(bip32Path: string): Promise<GetPublicKeyResponse>;
 
-  // TODO(k-matsuzawa): Does not yet support blindingTx.
-  // function getWalletConfidentialAddress(address: string): Promise<GetConfidentialAddressResponse>;
+  /*
+   * Get address with ledger wallet.
+   *
+   * @param bip32Path bip32 path.
+   * @param addressType address type.
+   * @returns GetAddressResponse wrapped promise.
+   */
+  getAddress(bip32Path: string, addressType: AddressType):
+    Promise<GetAddressResponse>;
 
-  // TODO(k-matsuzawa): Does not yet support blindingTx.
-  // function setProposalTransaction(
-  //   proposalTransaction: string,
-  //   walletUtxoList: UtxoData[]
-  // ): Promise<ResponseInfo>;
+  /*
+   * Get confidential address with ledger wallet.
+   *
+   * @param address address.
+   * @returns GetConfidentialAddressResponse wrapped promise.
+   */
+  getConfidentialAddress(address: string):
+    Promise<GetConfidentialAddressResponse>;
 
   /**
    * Get signed signature.
@@ -102,7 +129,7 @@ export class LedgerLiquidWrapper {
    */
   getSignature(
     proposalTransaction: string, // proposal transaction.
-    txinUtxoList: UtxoData[], // txin utxo list. (ignore walletUtxoList)
+    txinUtxoList: UtxoData[] | undefined, // txin utxo list. (ignore walletUtxoList)
     walletUtxoList: WalletUtxoData[], // sign target utxo list.
     authorizationSignature: string, // authorization signature (from backend)
   ): Promise<GetSignatureAddressResponse>;
