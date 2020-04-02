@@ -15,6 +15,7 @@ let addSignAddr4 = false;
 let signedTest = false;
 let signedAddTest = false;
 let authorizationPrivkey = '47ab8b0e5f8ea508808f9e03b804d623a7cb81cbf1f39d3e976eb83f9284ecde';
+let connectionTest = false;
 let mnemonic = '';
 // mnemonic = 'call node debug-console.js ledger hood festival pony outdoor always jeans page help symptom adapt obtain image bird duty damage find sense wasp box mail vapor plug general kingdom';
 
@@ -32,6 +33,8 @@ for (let i = 2; i < process.argv.length; i++) {
       signedTest = true;
     } else if (process.argv[i] === '-ta') {
       signedAddTest = true;
+    } else if (process.argv[i] === '-tc') {
+      connectionTest = true;
     } else if (i+1 < process.argv.length) {
       if (process.argv[i] === '-h') {
         ++i;
@@ -49,6 +52,9 @@ for (let i = 2; i < process.argv.length; i++) {
   }
 }
 
+const sleep = (msec: number) => new Promise(
+    (resolve) => setTimeout(resolve, msec));
+
 async function example() {
   // const addrType = ledgerLibDefine.AddressType.Bech32;
 
@@ -57,6 +63,37 @@ async function example() {
 
   // connect wait test
   const liquidLib = new LedgerLiquidWrapper(networkType);
+  if (connectionTest) {
+    let connRet = await liquidLib.connect(60, '');
+    if (!connRet.success) {
+      console.log('connection fail.(1)', connRet);
+      return;
+    }
+    for (let connTestCount = 0; connTestCount < 120; ++connTestCount) {
+      const connCheckRet = await liquidLib.isConnected();
+      if (connCheckRet.success) {
+        console.log('10 sec wait start.');
+        await sleep(10000);
+        console.log('10 sec wait end.');
+        connTestCount += 10;
+      } else if (connCheckRet.errorMessage === 'connection fail.') {
+        console.log('disconnect. start reconnection.');
+        connRet = await liquidLib.connect(60, '');
+        if (!connRet.success) {
+          console.log('connection fail. ', connRet);
+          break;
+        }
+        console.log('reconnect success.');
+      } else {
+        console.log('isConnected fail.(2)', connCheckRet);
+        break;
+      }
+      await sleep(1000);
+    }
+
+    return;
+  }
+
   const connRet = await liquidLib.connect(60, '');
   if (!connRet.success) {
     console.log('connection failed. ', connRet);
@@ -144,6 +181,7 @@ async function example() {
   const testPubkey4 = '030fa835a11a2cb01c58e2358dbdcc6d85e35cb2a38ca3d3d660aadb4bda2ad7f9';
   const testPrivkey4 = '7df5b968dee8f54c4b3cacf0386a4cab0eb7f6a10fc15f3b647bda227f4111b7';
 
+  const mainchainNwType = (networkType === 'liquidv1') ? 'mainnet' : 'regtest';
   let isScriptHash = false;
   let redeemScript;
   let scriptSigSegwit;
@@ -182,6 +220,36 @@ async function example() {
       // pubkey: '021a8cffee67e4a5d8e9cfe0e6dbcc86484b425e93508522224c32bbba96fb6d82'
       pubkey3 = '021a8cffee67e4a5d8e9cfe0e6dbcc86484b425e93508522224c32bbba96fb6d82';
       privkey3Hex = '80fabf46d8e9dd12fc59299f61a7638bac33d7d125677a37bcb4b3a0e32bb23f';
+      if (mnemonic.length > 0) {
+        const seed = cfdjs.ConvertMnemonicToSeed({
+          mnemonic: mnemonic.split(' '),
+          passphrase: '',
+        });
+        const parentExtKey = cfdjs.CreateExtkeyFromSeed({
+          seed: seed.seed,
+          network: mainchainNwType,
+          extkeyType: 'extPrivkey',
+        });
+        const extkey = cfdjs.CreateExtkeyFromParentPath({
+          extkey: parentExtKey.extkey,
+          network: mainchainNwType,
+          extkeyType: 'extPrivkey',
+          path: '44h/0h/0h/0/0',
+        });
+        const privkeyRet = cfdjs.GetPrivkeyFromExtkey({
+          extkey: extkey.extkey,
+          network: mainchainNwType,
+          wif: false,
+          isCompressed: true,
+        });
+        const pubkeyRet = cfdjs.GetPubkeyFromExtkey({
+          extkey: extkey.extkey,
+          network: mainchainNwType,
+        });
+        pubkey3 = pubkeyRet.pubkey;
+        privkey3Hex = privkeyRet.privkey;
+      }
+
       address = cfdjs.CreateAddress({
         'keyData': {
           'hex': pubkey3,
@@ -299,6 +367,9 @@ async function example() {
   };
   let tx1 = cfdjs.ElementsCreateRawTransaction(tx1Data);
   if (blindOpt.blind1) {
+    if (signedTest) {
+      console.log('*** before blind rawtx1 ***\n', tx1.hex);
+    }
     tx1 = cfdjs.BlindRawTransaction({
       tx: tx1.hex,
       txins: [{
@@ -315,7 +386,9 @@ async function example() {
       ],
     });
   }
-  const mainchainNwType = (networkType === 'liquidv1') ? 'mainnet' : 'regtest';
+  if (signedTest) {
+    console.log('*** rawtx1 (ignore sign) ***\n', tx1.hex);
+  }
   const dectx1 = cfdjs.ElementsDecodeRawTransaction({
     hex: tx1.hex, network: networkType,
     mainchainNetwork: mainchainNwType});
@@ -441,6 +514,7 @@ async function example() {
 
   let sigRet;
   if (signedTest) {
+    console.log('*** before sign rawtx ***\n', blindTx2.hex);
     const signed = cfdjs.SignWithPrivkey({
       isElements: true,
       tx: blindTx2.hex,

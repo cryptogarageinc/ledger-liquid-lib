@@ -1,5 +1,4 @@
 /* eslint-disable require-jsdoc */
-// import TransportNodeHid from '@ledgerhq/hw-transport-node-hid';
 
 export enum NetworkType {
   LiquidV1 = 'liquidv1',
@@ -30,6 +29,7 @@ export interface ResponseInfo {
   success: boolean;
   errorCode: number;
   errorMessage: string;
+  disconnect: boolean;
 }
 
 export interface GetPublicKeyResponse extends ResponseInfo {
@@ -37,13 +37,7 @@ export interface GetPublicKeyResponse extends ResponseInfo {
   chainCode: string;
 }
 
-export interface GetConfidentialAddressResponse extends ResponseInfo {
-  confidentialAddress: string;
-  confidentialKey: string;
-}
-
-export interface GetAddressResponse extends
-    GetPublicKeyResponse, GetConfidentialAddressResponse {
+export interface GetAddressResponse extends GetPublicKeyResponse {
   address: string;
 }
 
@@ -68,10 +62,17 @@ export class LedgerLiquidWrapper {
    *
    * @param maxWaitTime maximum waiting time (sec).
    * @param devicePath target device path.
-   * @return error info.
+   * @return ResponseInfo wrapped promise.
    */
   connect(maxWaitTime: number | undefined, devicePath: string | undefined):
     Promise<ResponseInfo>;
+
+  /**
+   * check device connection status.
+   *
+   * @return ResponseInfo wrapped promise.
+   */
+  isConnected(): Promise<ResponseInfo>;
 
   /**
    * Get redeem script for public key.
@@ -120,7 +121,7 @@ export class LedgerLiquidWrapper {
    */
   getSignature(
     proposalTransaction: string, // proposal transaction.
-    txinUtxoList: UtxoData[] | undefined, // txin utxo list. (ignore walletUtxoList)
+    txinUtxoList: UtxoData[], // txin utxo list. (ignore walletUtxoList)
     walletUtxoList: WalletUtxoData[], // sign target utxo list.
     authorizationSignature: string, // authorization signature (from backend)
   ): Promise<GetSignatureAddressResponse>;

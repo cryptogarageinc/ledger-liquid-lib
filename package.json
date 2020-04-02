@@ -38,6 +38,7 @@
     "ts_example": "ts-node example_ts.ts",
     "example": "node example.js",
     "format": "eslint --ext .js,.ts *.ts *.js src/ --fix",
-    "eslint_check": "eslint --ext .js,.ts *.ts *.js src/"
+    "eslint_check": "eslint --ext .js,.ts *.ts *.js src/",
+    "testvector1": "ts-node example_ts.ts -t -ta"
   }
 }

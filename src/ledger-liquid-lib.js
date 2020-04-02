@@ -148,94 +148,43 @@ async function getWalletPublicKey(transport, path, option) {
   };
 }
 
-// LIQUID GET BLINDING FACTOR
-async function liquidGetValueBlindingFactor(transport, outputIndex, isAbf) {
+// GET COIN VERSION
+async function getCoinVersion(transport) {
   const CLA = 0xe0;
-  const LIQUID_GET_BLINDING_FACTOR = 0xe8;
-  const index = Buffer.alloc(4);
-  index.writeUInt32BE(outputIndex, 0);
-  const p1 = (isAbf) ? 1 : 2;
-  const apdu = Buffer.concat(
-      [Buffer.from([CLA, LIQUID_GET_BLINDING_FACTOR, p1, 0]),
-        Buffer.from([index.length]), index]);
+  const GET_COIN_VERSION = 0x16;
+  const apdu = Buffer.from([CLA, GET_COIN_VERSION, 0, 0, 0]);
   const exchangeRet = await transport.exchange(apdu);
   const result = (exchangeRet.length <= 2) ? exchangeRet :
     exchangeRet.subarray(exchangeRet.length - 2);
-  const key = (exchangeRet.length <= 2) ? Buffer.alloc(0) :
-    exchangeRet.subarray(0, exchangeRet.length - 2);
-  // console.log(`liquidGetValueBlindingFactor = `, result);
+  let prefixP2pkh = 0;
+  let prefixP2sh = 0;
+  let coinFamily = 0;
+  let coinName = '';
+  let coinTicker = '';
+  if (exchangeRet.length >= 9) {
+    prefixP2pkh = exchangeRet.readUInt16BE(0);
+    prefixP2sh = exchangeRet.readUInt16BE(2);
+    coinFamily = exchangeRet[4];
+    const coinNameLen = exchangeRet[5];
+    if (coinNameLen > 0) {
+      coinName = exchangeRet.subarray(6, 6 + coinNameLen).toString();
+    }
+    const offset = 6 + coinNameLen;
+    if (offset < exchangeRet.length) {
+      const coinTickerLen = exchangeRet[offset];
+      if (coinTickerLen > 0) {
+        coinTicker = exchangeRet.subarray(
+            offset + 1, offset + coinTickerLen + 1).toString();
+      }
+    }
+  }
   return {
     errorCode: convertErrorCode(result),
-    key: key.toString('hex'),
-  };
-}
-
-// LIQUID GET BLINDING FACTOR
-async function liquidGetTXBlindingKey(transport) {
-  const CLA = 0xe0;
-  const LIQUID_GET_BLINDING_FACTOR = 0xe8;
-  // const apdu = Buffer.from([CLA, LIQUID_GET_BLINDING_FACTOR, 3, 0, 0]);
-  const apdu = Buffer.from(
-      [CLA, LIQUID_GET_BLINDING_FACTOR, 3, 0, 4, 0, 0, 0, 0]);
-  const exchangeRet = await transport.exchange(apdu);
-  const result = (exchangeRet.length <= 2) ? exchangeRet :
-    exchangeRet.subarray(exchangeRet.length - 2);
-  const key = (exchangeRet.length <= 2) ? Buffer.alloc(0) :
-   exchangeRet.subarray(0, exchangeRet.length - 2);
-  // console.log(`liquidGetTXBlindingKey = `, result);
-  // liquidGetTXBlindingKey =  <Buffer 67 00> -> INCORRECT_LENGTH
-  return {
-    errorCode: convertErrorCode(result),
-    key: key.toString('hex'),
-  };
-}
-
-// LIQUID GET PUBLIC BLINDING KEY
-async function liquidGetPublicBlindingKey(transport, scriptPubkeyHex) {
-  const CLA = 0xe0;
-  const LIQUID_GET_PUBLIC_BLINDING_KEY = 0xe2;
-  const scriptPubkey = Buffer.from(scriptPubkeyHex, 'hex');
-  const apdu = Buffer.concat([
-    Buffer.from([CLA, LIQUID_GET_PUBLIC_BLINDING_KEY, 0, 0]),
-    Buffer.from([scriptPubkey.length]), scriptPubkey,
-  ]);
-  const exchangeRet = await transport.exchange(apdu);
-  const result = (exchangeRet.length <= 2) ? exchangeRet :
-    exchangeRet.subarray(exchangeRet.length - 2);
-  const confKey = (exchangeRet.length <= 2) ? Buffer.alloc(0) :
-    exchangeRet.subarray(0, exchangeRet.length - 2);
-  // console.log(`liquidGetPublicBlindingKey = `, result);
-  return {
-    errorCode: convertErrorCode(result),
-    confidentialKey: confKey.toString('hex'),
-  };
-}
-
-async function liquidGetCommitments(
-    transport, asset, value, outputIndex, vbf, abf) {
-  const CLA = 0xe0;
-  const LIQUID_GET_COMMITMENT = 0xe0;
-  const p1 = 0x03;
-  const indexBuffer = Buffer.alloc(4);
-  indexBuffer.writeUInt32BE(outputIndex, 0);
-  const valueBuf = convertValueFromAmount(value).subarray(1);
-  const assetBuf = Buffer.from(asset, 'hex');
-  const data = Buffer.concat([assetBuf, valueBuf,
-    indexBuffer, Buffer.from(vbf, 'hex'), Buffer.from(abf, 'hex')]);
-  // const response = await transport.send(0xe0, 0xe0, p1, 0x00, data);
-  const apdu = Buffer.concat([
-    Buffer.from([CLA, LIQUID_GET_COMMITMENT, p1, 0]),
-    Buffer.from([data.length]), data,
-  ]);
-  console.log('liquidGetCommitments send', apdu.toString('hex'));
-  const exchangeRet = await transport.exchange(apdu);
-  const result = (exchangeRet.length <= 2) ? exchangeRet :
-    exchangeRet.subarray(exchangeRet.length - 2);
-  const commitment = (exchangeRet.length <= 2) ?
-    Buffer.alloc(0) : exchangeRet.slice(32 + 32, -2);
-  return {
-    errorCode: convertErrorCode(result),
-    commitment: commitment.toString('hex'),
+    prefixP2pkh: prefixP2pkh,
+    prefixP2sh: prefixP2sh,
+    coinFamily: coinFamily,
+    coinName: coinName,
+    coinTicker: coinTicker,
   };
 }
 
@@ -256,7 +205,7 @@ async function sendHashInputStartCmd(transport, p1, p2, data) {
   const HASH_INPUT_START = 0x44;
   const apdu = Buffer.concat([Buffer.from([CLA, HASH_INPUT_START, p1, p2]),
     Buffer.from([data.length]), data]);
-  console.log('sendHashInputStartCmd send =', apdu.toString('hex'));
+  // console.log('sendHashInputStartCmd send =', apdu.toString('hex'));
   const exchangeRet = await transport.exchange(apdu);
   const result = (exchangeRet.length <= 2) ? exchangeRet :
     exchangeRet.subarray(exchangeRet.length - 2);
@@ -406,11 +355,13 @@ async function liquidFinalizeInputFull(transport, dectx) {
     apdu = Buffer.concat([
       getVarIntBuffer(scriptPubkey.length),
       scriptPubkey]);
-    console.log(`txout(${idx}) = `, apdu.toString('hex'));
+    // console.log(`txout(${idx}) = `, apdu.toString('hex'));
     p1 = ((idx + 1) == dectx.vout.length) ? 0x80 : 0x00;
     errData = await sendHashInputFinalizeFullCmd(transport, p1, 0, apdu);
-    console.log(`liquidFinalizeInputFull = `, errData.data.toString('hex'));
-    if (errData.errorCode != 0x9000) break;
+    if (errData.errorCode != 0x9000) {
+      console.log(`liquidFinalizeInputFull = `, errData.data.toString('hex'));
+      break;
+    }
   }
   if (errData.errorCode != 0x9000) {
     console.log('liquidFinalizeInputFull ', errData);
@@ -432,7 +383,7 @@ async function untrustedHashSign(transport, dectx, path, pin, sigHashType) {
     authorization,
     locktime,
     Buffer.from([sigHashType])]);
-  console.log('untrustedHashSign send -> ', apdu.toString('hex'));
+  // console.log('untrustedHashSign send -> ', apdu.toString('hex'));
   return await sendHashSignCmd(transport, apdu);
 }
 
@@ -467,6 +418,27 @@ async function liquidProvideIssuanceInformation(transport, dectx) {
 */
 }
 
+const disconnectEcode = 0x6d00; // INS_NOT_SUPPORTED
+
+async function checkConnect(transport) {
+  // console.time('call getCoinVersion');
+  const result = await getCoinVersion(transport);
+  // console.timeEnd('call getCoinVersion');
+  // console.log('getCoinVersion =', result);
+  if (result.errorCode === 0x9000) {
+    if ((result.prefixP2pkh === 0xeb) &&
+        (result.prefixP2sh === 0x4b) &&
+        (result.coinFamily === 0x01) &&
+        (result.coinName === 'Bitcoin') &&
+        (result.coinTicker === 'BTC')) {
+      // liquid
+    } else {
+      return disconnectEcode;
+    }
+  }
+  return result.errorCode;
+}
+
 function compressPubkey(publicKey) {
   if (!publicKey) return '';
   return cfdjs.GetCompressedPubkey({pubkey: publicKey}).pubkey;
@@ -489,37 +461,79 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
 
     const waitLimit = (typeof maxWaitTime === 'number') ? maxWaitTime : 0xffffffff;
     const path = (typeof devicePath === 'string') ? devicePath : '';
-    const bip32Path = '44\'/0\'/0\'';
-    const notConnectedEcode = 0x6982;
     let transport = undefined;
     let count = 0;
-    let result;
-    let ecode = notConnectedEcode;
-    while ((ecode === notConnectedEcode) && (count < waitLimit)) {
+    let ecode = disconnectEcode;
+    while (count < waitLimit) {
       try {
         transport = await TransportNodeHid.open(path);
 
-        result = await getWalletPublicKey(transport, bip32Path, 0);
-        ecode = result.errorCode;
+        ecode = await checkConnect(transport);
         if (ecode === 0x9000) {
           this.transport = transport;
           break;
-        } else if (ecode !== notConnectedEcode) {
-          console.log('illegal error. ', result);
+        } else if (ecode !== disconnectEcode) {
+          console.log('illegal error. ', ecode);
           break;
         }
       } catch (e) {
         // console.log(`connection fail. count=${count}`, e);
+        const errText = e.toString();
+        if (errText.indexOf('DisconnectedDevice: Cannot write to HID device') >= 0) {
+          // disconnect error
+        } else if (errText.indexOf('TransportError: NoDevice') >= 0) {
+          // device connect error
+        } else {
+          console.log(`connection fail.(exception) count=${count}`, e);
+        }
       }
-      console.log(`connection fail. count=${count}`);
+      console.info(`connection fail. count=${count}`);
       ++count;
       await sleep(1000);
     }
 
+    let errMsg = 'other error';
+    if (ecode === 0x9000) {
+      errMsg = '';
+    } else if (ecode === disconnectEcode) {
+      errMsg = 'connection fail.';
+    }
     return {
       success: (ecode === 0x9000),
       errorCode: ecode,
-      errorMessage: (ecode === 0x9000) ? '' : 'other error',
+      errorMessage: errMsg,
+      disconnect: (ecode === disconnectEcode),
+    };
+  }
+
+  async isConnected() {
+    let ecode = disconnectEcode;
+    if (this.transport !== undefined) {
+      try {
+        ecode = await checkConnect(this.transport);
+      } catch (e) {
+        const errText = e.toString();
+        if (errText.indexOf('DisconnectedDevice: Cannot write to HID device') >= 0) {
+          // disconnect error
+        } else if (errText.indexOf('TransportError: NoDevice') >= 0) {
+          // device connect error
+        } else {
+          console.log(`connection fail.(exception) `, e);
+          ecode = 0x8000;
+        }
+      }
+    }
+    let errMsg = 'other error';
+    if (ecode === 0x9000) {
+      errMsg = '';
+    } else if (ecode === disconnectEcode) {
+      errMsg = 'connection fail.';
+    }
+    return {
+      success: (ecode === 0x9000),
+      errorCode: ecode,
+      errorMessage: errMsg,
+      disconnect: (ecode === disconnectEcode),
     };
   }
 
@@ -537,69 +551,105 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
   }
 
   async getWalletPublicKey(bip32Path) {
-    // TODO(k-matsuzawa): notfound liquid option(0x10, 0x11)
-    const p2 = 1; // = 0x10;
-    const result = await getWalletPublicKey(this.transport, bip32Path, p2);
-    // console.log('getWalletPublicKey result =', result);
+    let result = undefined;
+    const connRet = await this.isConnected();
+    let ecode = connRet.errorCode;
+    let errMsg = connRet.errorMessage;
+    if (connRet.success) {
+      // TODO(k-matsuzawa): notfound liquid option(0x10, 0x11)
+      const p2 = 1; // = 0x10;
+      // console.time('call getWalletPublicKey');
+      result = await getWalletPublicKey(this.transport, bip32Path, p2);
+      // console.timeEnd('call getWalletPublicKey');
+      // console.log('getWalletPublicKey result =', result);
+      ecode = result.errorCode;
+      errMsg = (ecode === 0x9000) ? '' : 'other error';
+    }
     return {
-      success: (result.errorCode === 0x9000),
-      errorCode: result.errorCode,
-      errorMessage: (result.errorCode === 0x9000) ? '' : 'other error',
-      publicKey: compressPubkey(result.pubkey),
-      chainCode: result.chainCode,
+      success: (ecode === 0x9000),
+      errorCode: ecode,
+      errorMessage: errMsg,
+      disconnect: connRet.disconnect,
+      publicKey: (!result) ? '' : compressPubkey(result.pubkey),
+      chainCode: (!result) ? '' : result.chainCode,
     };
   }
 
   async getAddress(bip32Path, addressFormat) {
-    let addressRet;
-    const pubkeyRet = await this.getWalletPublicKey(bip32Path);
-    let result = pubkeyRet;
-    if (pubkeyRet.success) {
-      let hashType = 'p2sh-p2wpkh';
-      if (addressFormat === 'bech32') {
-        hashType = 'p2wpkh';
-      } else if (addressFormat === 'legacy') {
-        hashType = 'p2pkh';
-      }
-      addressRet = cfdjs.CreateAddress({
-        keyData: {
-          hex: pubkeyRet.publicKey,
-          type: 'pubkey',
-        },
-        network: this.networkType,
-        isElements: true,
-        hashType: hashType,
-      });
+    let result = undefined;
+    let addressRet = undefined;
+    let pubkeyRet = undefined;
+    const connRet = await this.isConnected();
+    let ecode = connRet.errorCode;
+    let errMsg = connRet.errorMessage;
+    if (connRet.success) {
+      pubkeyRet = await this.getWalletPublicKey(bip32Path);
       result = pubkeyRet;
+      if (pubkeyRet.success) {
+        let hashType = 'p2sh-p2wpkh';
+        if (addressFormat === 'bech32') {
+          hashType = 'p2wpkh';
+        } else if (addressFormat === 'legacy') {
+          hashType = 'p2pkh';
+        }
+        addressRet = cfdjs.CreateAddress({
+          keyData: {
+            hex: pubkeyRet.publicKey,
+            type: 'pubkey',
+          },
+          network: this.networkType,
+          isElements: true,
+          hashType: hashType,
+        });
+        result = pubkeyRet;
+      }
+      ecode = result.errorCode;
+      errMsg = (ecode === 0x9000) ? '' : 'other error';
     }
     return {
-      success: (result.errorCode === 0x9000),
-      errorCode: result.errorCode,
-      errorMessage: (result.errorCode === 0x9000) ? '' : 'other error',
-      publicKey: compressPubkey(pubkeyRet.pubkey),
-      chainCode: pubkeyRet.chainCode,
+      success: (ecode === 0x9000),
+      errorCode: ecode,
+      errorMessage: errMsg,
+      disconnect: connRet.disconnect,
+      publicKey: (!pubkeyRet) ? '' : compressPubkey(pubkeyRet.pubkey),
+      chainCode: (!pubkeyRet) ? '' : pubkeyRet.chainCode,
       address: (!addressRet) ? '' : addressRet.address,
     };
   }
 
   async setupHeadlessAuthorization(authorizationPublicKey) {
-    const ecode = await liquidSetupHeadless(this.transport,
-        authorizationPublicKey);
-    let errorMessage = 'other error.';
-    if (ecode === 0x9000) {
-      errorMessage = '';
-    } else if (ecode === 0x6985) {
-      errorMessage = 'CONDITIONS_OF_USE_NOT_SATISFIED';
+    const connRet = await this.isConnected();
+    let ecode = connRet.errorCode;
+    let errMsg = connRet.errorMessage;
+    if (connRet.success) {
+      ecode = await liquidSetupHeadless(this.transport,
+          authorizationPublicKey);
+      errMsg = (ecode === 0x9000) ? '' : 'other error.';
+      if (ecode === 0x6985) {
+        errMsg = 'CONDITIONS_OF_USE_NOT_SATISFIED';
+      }
     }
     return {
       success: (ecode === 0x9000),
       errorCode: ecode,
-      errorMessage: errorMessage,
+      errorMessage: errMsg,
+      disconnect: connRet.disconnect,
     };
   }
 
   async getSignature(proposalTransaction, txinUtxoList,
       walletUtxoList, authorizationSignature) {
+    const signatureList = [];
+    const connRet = await this.isConnected();
+    if (!connRet.success) {
+      return {
+        success: connRet.success,
+        errorCode: connRet.errorCode,
+        errorMessage: connRet.errorMessage,
+        disconnect: connRet.disconnect,
+        signatureList: signatureList,
+      };
+    }
     const dectx = cfdjs.ElementsDecodeRawTransaction({
       hex: proposalTransaction, network: this.network,
       mainchainNetwork: this.mainchainNetwork});
@@ -626,9 +676,8 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       }
     }
     let ecode = 0;
-    const signatureList = [];
 
-    console.log('amountValueList =', amountValueList);
+    // console.info('amountValueList =', amountValueList);
     ecode = await startUntrustedTransaction(this.transport, dectx, false,
         amountValueList, 0, '');
     if (ecode === 0x9000) {
@@ -702,6 +751,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       success: (ecode === 0x9000),
       errorCode: ecode,
       errorMessage: (ecode === 0x9000) ? '' : 'other error.',
+      disconnect: false,
       signatureList: signatureList,
     };
   }
