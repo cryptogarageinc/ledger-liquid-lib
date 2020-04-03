@@ -7,6 +7,10 @@ function convertErrorCode(buf) {
   return buf.readUInt16BE();
 }
 
+function debugSendLog(funcName, buffer) {
+  console.log(funcName, buffer.toString('hex'));
+}
+
 function reverseBuffer(buf) {
   const buffer = Buffer.allocUnsafe(buf.length);
   for (let i = 0, j = buf.length - 1; i <= j; ++i, --j) {
@@ -105,7 +109,7 @@ async function getWalletPublicKey(transport, path, option) {
   const data = Buffer.concat([
     Buffer.from([pathBuffer.length / 4]),
     pathBuffer]);
-  // console.log('getWalletPublicKey send -> ', data.toString('hex'));
+  debugSendLog('getWalletPublicKey send -> ', data);
   const apdu = Buffer.concat(
       [Buffer.from([CLA, GET_WALLET_PUBLIC_KEY, p1, option]),
         Buffer.from([data.length]), data]);
@@ -205,7 +209,7 @@ async function sendHashInputStartCmd(transport, p1, p2, data) {
   const HASH_INPUT_START = 0x44;
   const apdu = Buffer.concat([Buffer.from([CLA, HASH_INPUT_START, p1, p2]),
     Buffer.from([data.length]), data]);
-  // console.log('sendHashInputStartCmd send =', apdu.toString('hex'));
+  debugSendLog('sendHashInputStartCmd send -> ', apdu);
   const exchangeRet = await transport.exchange(apdu);
   const result = (exchangeRet.length <= 2) ? exchangeRet :
     exchangeRet.subarray(exchangeRet.length - 2);
@@ -221,6 +225,7 @@ async function sendHashInputFinalizeFullCmd(transport, p1, p2, data) {
   const apdu = Buffer.concat(
       [Buffer.from([CLA, HASH_INPUT_FINALIZE_FULL, p1, p2]),
         Buffer.from([data.length]), data]);
+  debugSendLog('sendHashInputFinalizeFullCmd send -> ', apdu);
   const exchangeRet = await transport.exchange(apdu);
   const result = (exchangeRet.length <= 2) ? exchangeRet :
     exchangeRet.subarray(exchangeRet.length - 2);
@@ -238,6 +243,7 @@ async function sendHashSignCmd(transport, data) {
   const HASH_SIGN = 0x48;
   const apdu = Buffer.concat([Buffer.from([CLA, HASH_SIGN, 0, 0]),
     Buffer.from([data.length]), data]);
+  debugSendLog('sendHashSignCmd send -> ', apdu);
   const exchangeRet = await transport.exchange(apdu);
   const result = (exchangeRet.length <= 2) ? exchangeRet :
    exchangeRet.subarray(exchangeRet.length - 2);
@@ -261,7 +267,8 @@ async function startUntrustedTransaction(transport, dectx, isContinue,
 
   const version = Buffer.alloc(4);
   version.writeUInt32LE(dectx.version, 0);
-  let apdu = Buffer.concat([version, getVarIntBuffer([dectx.vin.length])]);
+  const inputNum = (inputIndex === -1) ? dectx.vin.length : 1;
+  let apdu = Buffer.concat([version, getVarIntBuffer([inputNum])]);
   let errData = await sendHashInputStartCmd(transport, p1, p2, apdu);
   if (errData.errorCode != 0x9000) {
     console.log('fail sendHashInputStartCmd', errData);
@@ -271,6 +278,9 @@ async function startUntrustedTransaction(transport, dectx, isContinue,
   p1 = 0x80;
   // p2 = 0x00;
   for (let idx = 0; idx < dectx.vin.length; ++idx) {
+    if ((inputIndex !== -1) && (idx !== inputIndex)) {
+      continue;
+    }
     const header = Buffer.from([txinHead]);
     const txid = reverseBuffer(Buffer.from(dectx.vin[idx].txid, 'hex'));
     const vout = Buffer.alloc(4);
@@ -282,8 +292,7 @@ async function startUntrustedTransaction(transport, dectx, isContinue,
     } else {
       value = Buffer.from(amountValueList[idx], 'hex');
     }
-    const script = (inputIndex != idx) ? Buffer.alloc(0) :
-     Buffer.from(targetRedeemScript, 'hex');
+    const script = Buffer.from(targetRedeemScript, 'hex');
     const sequence = Buffer.alloc(4);
     sequence.writeUInt32LE(dectx.vin[idx].sequence, 0);
     apdu = Buffer.concat([header, txid, vout, value,
@@ -331,10 +340,16 @@ async function liquidFinalizeInputFull(transport, dectx) {
         Buffer.from(dectx.vout[idx].assetcommitment, 'hex'),
         Buffer.from(dectx.vout[idx].valuecommitment, 'hex')]);
       errData = await sendHashInputFinalizeFullCmd(transport, 0, 0, apdu);
-      if (errData.errorCode != 0x9000) break;
+      if (errData.errorCode != 0x9000) {
+        console.log('liquidFinalizeInputFull ', errData);
+        break;
+      }
       errData = await sendHashInputFinalizeFullCmd(transport, 0, 0,
           Buffer.from(dectx.vout[idx].commitmentnonce, 'hex'));
-      if (errData.errorCode != 0x9000) break;
+      if (errData.errorCode != 0x9000) {
+        console.log('liquidFinalizeInputFull ', errData);
+        break;
+      }
       // errData = await sendHashInputFinalizeFullCmd(
       //     transport, 0, 0, Buffer.from([0])); // confidentialKey
       // if (errData.errorCode != 0x9000) break;
@@ -344,13 +359,22 @@ async function liquidFinalizeInputFull(transport, dectx) {
         Buffer.from([1]), asset,
         convertValueFromAmount(dectx.vout[idx].value)]);
       errData = await sendHashInputFinalizeFullCmd(transport, 0, 0, apdu);
-      if (errData.errorCode != 0x9000) break;
+      if (errData.errorCode != 0x9000) {
+        console.log('liquidFinalizeInputFull ', errData);
+        break;
+      }
       errData = await sendHashInputFinalizeFullCmd(
           transport, 0, 0, Buffer.from([0])); // nonce
-      if (errData.errorCode != 0x9000) break;
+      if (errData.errorCode != 0x9000) {
+        console.log('liquidFinalizeInputFull ', errData);
+        break;
+      }
       errData = await sendHashInputFinalizeFullCmd(
           transport, 0, 0, Buffer.from([0])); // confidentialKey
-      if (errData.errorCode != 0x9000) break;
+      if (errData.errorCode != 0x9000) {
+        console.log('liquidFinalizeInputFull ', errData);
+        break;
+      }
     }
     apdu = Buffer.concat([
       getVarIntBuffer(scriptPubkey.length),
@@ -384,7 +408,11 @@ async function untrustedHashSign(transport, dectx, path, pin, sigHashType) {
     locktime,
     Buffer.from([sigHashType])]);
   // console.log('untrustedHashSign send -> ', apdu.toString('hex'));
-  return await sendHashSignCmd(transport, apdu);
+  const result = await sendHashSignCmd(transport, apdu);
+  if (result.errorCode != 0x9000) {
+    console.log('untrustedHashSign fail =', result);
+  }
+  return result;
 }
 
 async function liquidProvideIssuanceInformation(transport, dectx) {
@@ -396,6 +424,7 @@ async function liquidProvideIssuanceInformation(transport, dectx) {
   const apdu = Buffer.concat(
       [Buffer.from([CLA, LIQUID_PROVIDE_ISSUANCE_INFORMATION, p1, 0]),
         Buffer.from([data.length]), data]);
+  debugSendLog('liquidProvideIssuanceInformation send -> ', apdu);
   const exchangeRet = await transport.exchange(apdu);
   const result = (exchangeRet.length <= 2) ? exchangeRet :
     exchangeRet.subarray(exchangeRet.length - 2);
@@ -675,11 +704,61 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
         // amountValueList.push(1); // dummy amount
       }
     }
-    let ecode = 0;
+    let ecode = 0x9000;
+
+    const utxoScriptList = [];
+    // Collect redeemScript before startUntrustedTransaction
+    // because you need to call getWalletPublicKey.
+    for (const utxo of walletUtxoList) {
+      let targetIndex = -1;
+      for (let index = 0; index < dectx.vin.length; ++index) {
+        if ((dectx.vin[index].txid === utxo.txid) &&
+            (dectx.vin[index].vout === utxo.vout)) {
+          targetIndex = index;
+          break;
+        }
+      }
+      if (targetIndex === -1) {
+        throw new Error('wallet utxo is not in the txin list.');
+      }
+
+      let redeemScript = '';
+      if (!utxo.descriptor && !utxo.redeemScript) {
+        // bip32 path -> pubkey -> lockingscript
+      } else if (!utxo.descriptor) {
+        redeemScript = utxo.redeemScript;
+      } else {
+        const desc = cfdjs.ParseDescriptor({
+          isElements: true,
+          descriptor: utxo.descriptor,
+          network: this.network,
+        });
+        if (('scripts' in desc) && (desc.scripts.length > 0) &&
+            ('redeemScript' in desc.scripts[desc.scripts.length - 1])) {
+          redeemScript = desc.scripts[desc.scripts.length - 1].redeemScript;
+        }
+      }
+
+      if (!redeemScript) {
+        const pubkeyRet = await this.getWalletPublicKey(utxo.bip32Path);
+        ecode = pubkeyRet.errorCode;
+        if (ecode !== 0x9000) {
+          break;
+        }
+        redeemScript = this.getPublicKeyRedeemScript(pubkeyRet.publicKey);
+      }
+      utxoScriptList.push({
+        redeemScript: redeemScript,
+        targetIndex: targetIndex,
+        utxo: utxo,
+      });
+    }
 
     // console.info('amountValueList =', amountValueList);
-    ecode = await startUntrustedTransaction(this.transport, dectx, false,
-        amountValueList, 0, '');
+    if (ecode === 0x9000) {
+      ecode = await startUntrustedTransaction(this.transport, dectx, false,
+          amountValueList, -1, '');
+    }
     if (ecode === 0x9000) {
       ecode = await liquidFinalizeInputFull(this.transport, dectx);
     }
@@ -690,58 +769,21 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     if (ecode === 0x9000) {
       // sighashtype: 1=all only
       const sighashtype = 1;
-      for (const utxo of walletUtxoList) {
-        let targetIndex = -1;
-        for (let index = 0; index < dectx.vin.length; ++index) {
-          if ((dectx.vin[index].txid === utxo.txid) &&
-              (dectx.vin[index].vout === utxo.vout)) {
-            targetIndex = index;
-            break;
-          }
-        }
-        if (targetIndex === -1) {
-          throw new Error('wallet utxo is not in the txin list.');
-        }
-
-        let redeemScript = '';
-        if (!utxo.descriptor && !utxo.redeemScript) {
-          // bip32 path -> pubkey -> lockingscript
-        } else if (!utxo.descriptor) {
-          redeemScript = utxo.redeemScript;
-        } else {
-          const desc = cfdjs.ParseDescriptor({
-            isElements: true,
-            descriptor: utxo.descriptor,
-            network: this.network,
-          });
-          if (('scripts' in desc) && (desc.scripts.length > 0) &&
-              ('redeemScript' in desc.scripts[desc.scripts.length - 1])) {
-            redeemScript = desc.scripts[desc.scripts.length - 1].redeemScript;
-          }
-        }
-
-        if (!redeemScript) {
-          const pubkeyRet = await this.getWalletPublicKey(utxo.bip32Path);
-          ecode = pubkeyRet.errorCode;
-          if (ecode !== 0x9000) {
-            break;
-          }
-          redeemScript = this.getPublicKeyRedeemScript(pubkeyRet.publicKey);
-        }
-
+      for (const utxoData of utxoScriptList) {
         ecode = await startUntrustedTransaction(this.transport, dectx,
-            true, amountValueList, targetIndex, redeemScript);
+            true, amountValueList, utxoData.targetIndex,
+            utxoData.redeemScript);
         if (ecode !== 0x9000) {
           break;
         }
         const signatureRet = await untrustedHashSign(this.transport, dectx,
-            utxo.bip32Path, authorizationSignature, sighashtype);
+            utxoData.utxo.bip32Path, authorizationSignature, sighashtype);
         ecode = signatureRet.errorCode;
         if (ecode !== 0x9000) {
           break;
         }
         signatureList.push({
-          utxoData: utxo,
+          utxoData: utxoData.utxo,
           signature: signatureRet.signature,
         });
       }

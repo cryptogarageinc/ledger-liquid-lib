@@ -15,6 +15,7 @@ let addSignAddr4 = false;
 let signedTest = false;
 let signedAddTest = false;
 let authorizationPrivkey = '47ab8b0e5f8ea508808f9e03b804d623a7cb81cbf1f39d3e976eb83f9284ecde';
+let setAuthorization = false;
 let connectionTest = false;
 let mnemonic = '';
 // mnemonic = 'call node debug-console.js ledger hood festival pony outdoor always jeans page help symptom adapt obtain image bird duty damage find sense wasp box mail vapor plug general kingdom';
@@ -35,6 +36,8 @@ for (let i = 2; i < process.argv.length; i++) {
       signedAddTest = true;
     } else if (process.argv[i] === '-tc') {
       connectionTest = true;
+    } else if (process.argv[i] === '-a') {
+      setAuthorization = true;
     } else if (i+1 < process.argv.length) {
       if (process.argv[i] === '-h') {
         ++i;
@@ -141,9 +144,14 @@ async function example() {
   console.log('pubkey3 => ', pubkey3);
   console.log('pubkey4 => ', pubkey4);
 
-  // const authPubkey = '04b85b0e5f5b41f1a95bbf9a83edd95c741223c6d9dc5fe607de18f015684ff56ec359705fcf9bbeb1620fb458e15e3d99f23c6f5df5e91e016686371a65b16f0c';
-  // const setupRet = await liquidLib.setupHeadlessAuthorization(authPubkey);
-  // console.log('--HEADLESS LIQUID SEND AUTHORIZATION PUBLIC KEY --\n', setupRet);
+  if (setAuthorization) {
+    const authKey = cfdjs.GetPubkeyFromPrivkey({
+      privkey: authorizationPrivkey,
+      isCompressed: false,
+    });
+    const setupRet = await liquidLib.setupHeadlessAuthorization(authKey.pubkey);
+    console.log('--HEADLESS LIQUID SEND AUTHORIZATION PUBLIC KEY --\n', setupRet);
+  }
 
   // eslint-disable-next-line prefer-const
 
@@ -659,7 +667,8 @@ async function example() {
         redeemScript: redeemScript,
       }];
     }
-    console.log('*** utxoList start. ***', utxoList);
+    console.log('*** utxoList ***', utxoList);
+    console.log('*** walletUtxoList ***', walletUtxoList);
     console.log('*** getSignature start. ***');
     sigRet = await liquidLib.getSignature(blindTx2.hex,
         utxoList, walletUtxoList, authDerSig);
