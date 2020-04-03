@@ -666,7 +666,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     };
   }
 
-  async getSignature(proposalTransaction, txinUtxoList,
+  async getSignature(proposalTransaction,
       walletUtxoList, authorizationSignature) {
     const signatureList = [];
     const connRet = await this.isConnected();
@@ -685,10 +685,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
 
     const amountValueList = [];
 
-    const utxoList = txinUtxoList;
-    for (const utxo of walletUtxoList) {
-      utxoList.push(utxo);
-    }
+    const utxoList = walletUtxoList;
     for (const txin of dectx.vin) {
       let isFind = false;
       for (const utxo of utxoList) {
@@ -700,8 +697,8 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
         }
       }
       if (!isFind) {
-        throw new Error('txin is not in the utxo list.');
-        // amountValueList.push(1); // dummy amount
+        // throw new Error('txin is not in the utxo list.');
+        amountValueList.push(1); // dummy amount
       }
     }
     let ecode = 0x9000;

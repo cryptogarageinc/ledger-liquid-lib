@@ -618,20 +618,6 @@ async function example() {
     console.log(`*** calc authorization end. [${authDerSig}] ***`);
     // get authorization end ---------------------------------
 
-    const utxoList = [{
-      txid: utxo.txid,
-      vout: utxo.vout,
-      amount: utxo.amount,
-      valueCommitment: utxo.value,
-    }];
-    if (tx2InputCount === 2) {
-      utxoList.push({
-        txid: utxo2.txid,
-        vout: utxo2.vout,
-        amount: utxo2.amount,
-        valueCommitment: utxo2.value,
-      });
-    }
     let walletUtxoList = [{
       bip32Path: PATH3,
       txid: utxo.txid,
@@ -667,11 +653,10 @@ async function example() {
         redeemScript: redeemScript,
       }];
     }
-    console.log('*** utxoList ***', utxoList);
     console.log('*** walletUtxoList ***', walletUtxoList);
     console.log('*** getSignature start. ***');
     sigRet = await liquidLib.getSignature(blindTx2.hex,
-        utxoList, walletUtxoList, authDerSig);
+        walletUtxoList, authDerSig);
     console.log(`*** getSignature end. ***`,
         JSON.stringify(sigRet, (key, value) =>
             typeof value === 'bigint' ? value.toString() : value, '  '));

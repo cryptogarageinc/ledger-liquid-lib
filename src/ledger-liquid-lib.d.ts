@@ -113,7 +113,6 @@ export class LedgerLiquidWrapper {
    * Get signed signature.
    *
    * @param proposalTransaction         proposal transaction.
-   * @param txinUtxoList                utxo list. (for amount or valueCommitment)
    * @param walletUtxoList              sign target utxo list.
    * @param authorizationSignature      authorization signature (from backend).
    * @param sigHashType                 signature hash type.
@@ -121,7 +120,6 @@ export class LedgerLiquidWrapper {
    */
   getSignature(
     proposalTransaction: string, // proposal transaction.
-    txinUtxoList: UtxoData[], // txin utxo list. (ignore walletUtxoList)
     walletUtxoList: WalletUtxoData[], // sign target utxo list.
     authorizationSignature: string, // authorization signature (from backend)
   ): Promise<GetSignatureAddressResponse>;
