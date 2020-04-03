@@ -285,6 +285,9 @@ async function startUntrustedTransaction(transport, dectx, isContinue,
     const txid = reverseBuffer(Buffer.from(dectx.vin[idx].txid, 'hex'));
     const vout = Buffer.alloc(4);
     vout.writeUInt32LE(dectx.vin[idx].vout, 0);
+    // if ('issuance' in dectx.vin[idx]) {
+    //   vout[3] |= 0x80;
+    // }
     let value;
     if ((typeof amountValueList[idx] === 'number') ||
         (typeof amountValueList[idx] === 'bigint')) {
@@ -415,12 +418,11 @@ async function untrustedHashSign(transport, dectx, path, pin, sigHashType) {
   return result;
 }
 
-async function liquidProvideIssuanceInformation(transport, dectx) {
-  // unused setting. send 0x00 command.
+
+async function sendProvideIssuanceInformationCmd(
+    transport, data, p1) {
   const CLA = 0xe0;
   const LIQUID_PROVIDE_ISSUANCE_INFORMATION = 0xe6;
-  const p1 = 0x80;
-  const data = Buffer.alloc(dectx.vin.length);
   const apdu = Buffer.concat(
       [Buffer.from([CLA, LIQUID_PROVIDE_ISSUANCE_INFORMATION, p1, 0]),
         Buffer.from([data.length]), data]);
@@ -428,23 +430,73 @@ async function liquidProvideIssuanceInformation(transport, dectx) {
   const exchangeRet = await transport.exchange(apdu);
   const result = (exchangeRet.length <= 2) ? exchangeRet :
     exchangeRet.subarray(exchangeRet.length - 2);
-  return convertErrorCode(result);
-/*
-  def liquidProvideIssuanceInformation(self, issuanceInformation):
-  offset = 0
-  while (offset < len(issuanceInformation)):
-  blockLength = 255
-  if ((offset + blockLength) < len(issuanceInformation)):
-  dataLength = blockLength
-  p1 = 0x00
-  else:
-  dataLength = len(issuanceInformation) - offset
-  p1 = 0x80
-  apdu = [ self.BTCHIP_CLA, self.BTCHIP_INS_LIQUID_PROVIDE_ISSUANCE_INFORMATION, p1, 0x00, dataLength]
-  apdu.extend(issuanceInformation[offset : offset + dataLength])
-  self.dongle.exchange(bytearray(apdu))
-  offset += dataLength
-*/
+  const ecode = convertErrorCode(result);
+  if (ecode !== 0x9000) {
+    console.log('sendProvideIssuanceInformationCmd Fail. ecode =', ecode);
+  }
+  return ecode;
+}
+
+async function liquidProvideIssuanceInformation(transport, dectx) {
+  let isFind = false;
+  for (let idx = 0; idx < dectx.vin.length; ++idx) {
+    if ('issuance' in dectx.vin[idx]) {
+      isFind = true;
+      break;
+    }
+  }
+
+  let ecode;
+  let data;
+  if (!isFind) {
+    data = Buffer.alloc(dectx.vin.length);
+    return await sendProvideIssuanceInformationCmd(transport, data, 0x80);
+  }
+
+  for (let idx = 0; idx < dectx.vin.length; ++idx) {
+    const p1 = (idx === (dectx.vin.length - 1)) ? 0x80 : 0x00;
+    if ('issuance' in dectx.vin[idx]) {
+      const issuance = dectx.vin[idx].issuance;
+      data = Buffer.concat([
+        reverseBuffer(Buffer.from(issuance.assetBlindingNonce, 'hex')),
+        reverseBuffer(Buffer.from(issuance.assetEntropy, 'hex')),
+      ]);
+      if ('assetamount' in issuance) {
+        data = Buffer.concat([
+          data,
+          convertValueFromAmount(issuance.assetamount),
+        ]);
+      } else if ('assetamountcommitment' in issuance) {
+        data = Buffer.concat([
+          data,
+          Buffer.from(issuance.assetamountcommitment, 'hex'),
+        ]);
+      } else {
+        data = Buffer.concat([data, Buffer.alloc(1)]);
+      }
+      if ('tokenamount' in issuance) {
+        data = Buffer.concat([
+          data,
+          convertValueFromAmount(issuance.tokenamount),
+        ]);
+      } else if ('tokenamountcommitment' in issuance) {
+        data = Buffer.concat([
+          data,
+          Buffer.from(issuance.tokenamountcommitment, 'hex'),
+        ]);
+      } else {
+        data = Buffer.concat([data, Buffer.alloc(1)]);
+      }
+      ecode = await sendProvideIssuanceInformationCmd(transport, data, p1);
+    } else {
+      data = Buffer.alloc(1);
+      ecode = await sendProvideIssuanceInformationCmd(transport, data, p1);
+    }
+    if (ecode !== 0x9000) {
+      break;
+    }
+  }
+  return ecode;
 }
 
 const disconnectEcode = 0x6d00; // INS_NOT_SUPPORTED
