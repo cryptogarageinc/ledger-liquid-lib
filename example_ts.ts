@@ -1,6 +1,6 @@
 /* eslint-disable require-jsdoc */
 import * as cfdjs from 'cfd-js';
-import {LedgerLiquidWrapper} from './src/ledger-liquid-lib';
+import {LedgerLiquidWrapper, WalletUtxoData} from './src/ledger-liquid-lib';
 import * as ledgerLibDefine from './src/ledger-liquid-lib-defines';
 
 process.on('unhandledRejection', console.dir);
@@ -22,6 +22,8 @@ let setAuthorization = false;
 let connectionTest = false;
 let mnemonic = '';
 // mnemonic = 'call node debug-console.js ledger hood festival pony outdoor always jeans page help symptom adapt obtain image bird duty damage find sense wasp box mail vapor plug general kingdom';
+let txData = '';
+let signTarget = '';
 
 for (let i = 2; i < process.argv.length; i++) {
   if (process.argv[i]) {
@@ -57,6 +59,12 @@ for (let i = 2; i < process.argv.length; i++) {
       } else if (process.argv[i] === '-n') {
         ++i;
         mnemonic = process.argv[i];
+      } else if (process.argv[i] === '-txc') {
+        ++i;
+        txData = process.argv[i];
+      } else if (process.argv[i] === '-st') {
+        ++i;
+        signTarget = process.argv[i];
       }
     }
   }
@@ -64,6 +72,55 @@ for (let i = 2; i < process.argv.length; i++) {
 
 const sleep = (msec: number) => new Promise(
     (resolve) => setTimeout(resolve, msec));
+
+async function execSign(txHex: string,
+    signUtxoList: WalletUtxoData[]): Promise<string> {
+  // connect wait test
+  const liquidLib = new LedgerLiquidWrapper(networkType);
+  if (connectionTest) {
+    let connRet = await liquidLib.connect(60, '');
+    if (!connRet.success) {
+      console.log('connection fail.(1)', connRet);
+      return '';
+    }
+    for (let connTestCount = 0; connTestCount < 120; ++connTestCount) {
+      const connCheckRet = await liquidLib.isConnected();
+      if (connCheckRet.success) {
+        console.log('10 sec wait start.');
+        await sleep(10000);
+        console.log('10 sec wait end.');
+        connTestCount += 10;
+      } else if (connCheckRet.errorMessage === 'connection fail.') {
+        console.log('disconnect. start reconnection.');
+        connRet = await liquidLib.connect(60, '');
+        if (!connRet.success) {
+          console.log('connection fail. ', connRet);
+          break;
+        }
+        console.log('reconnect success.');
+      } else {
+        console.log('isConnected fail.(2)', connCheckRet);
+        break;
+      }
+      await sleep(1000);
+    }
+
+    return '';
+  }
+
+  const connRet = await liquidLib.connect(60, '');
+  if (!connRet.success) {
+    console.log('connection failed. ', connRet);
+    return '';
+  }
+
+  return '';
+}
+
+async function signTest() {
+  // parse signTarget -> WalletUtxoData
+  // call execSign
+}
 
 async function example() {
   const addrType = ledgerLibDefine.AddressType.Bech32;
@@ -448,7 +505,7 @@ async function example() {
       tx: tx1.hex,
       txins: [{
         txid: tx1Data.txins[0].txid,
-        vout: BigInt(tx1Data.txins[0].vout), // invalid type on cfd-js
+        vout: tx1Data.txins[0].vout,
         asset: asset1,
         blindFactor: '0000000000000000000000000000000000000000000000000000000000000000',
         assetBlindFactor: '0000000000000000000000000000000000000000000000000000000000000000',
@@ -463,7 +520,7 @@ async function example() {
     if (setReissueTx && blind1Data.issuances) {
       blind1Data.issuances.push({
         txid: tx1Data.txins[0].txid,
-        vout: BigInt(tx1Data.txins[0].vout),
+        vout: tx1Data.txins[0].vout,
         assetBlindingKey: blindingKey11,
         tokenBlindingKey: blindingKey4,
       });
@@ -616,7 +673,7 @@ async function example() {
       tx: blindTx2.hex,
       txins: [{
         txid: tx2Data.txins[0].txid,
-        vout: BigInt(tx2Data.txins[0].vout), // invalid type on cfd-js
+        vout: tx2Data.txins[0].vout,
         asset: unblindTxOut[0].asset,
         blindFactor: unblindTxOut[0].blindFactor,
         assetBlindFactor: unblindTxOut[0].assetBlindFactor,
@@ -631,7 +688,7 @@ async function example() {
     if ((tx2InputCount === 2) && (blindReqData.txins)) {
       blindReqData.txins.push({
         txid: tx2Data.txins[1].txid,
-        vout: BigInt(tx2Data.txins[1].vout), // invalid type on cfd-js
+        vout: tx2Data.txins[1].vout,
         asset: unblindTxOut[1].asset,
         blindFactor: unblindTxOut[1].blindFactor,
         assetBlindFactor: unblindTxOut[1].assetBlindFactor,
@@ -641,14 +698,14 @@ async function example() {
     if (setIssueTx && blindReqData.issuances) {
       blindReqData.issuances.push({
         txid: tx2Data.txins[0].txid,
-        vout: BigInt(tx2Data.txins[0].vout),
+        vout: tx2Data.txins[0].vout,
         assetBlindingKey: blindingKey11,
         tokenBlindingKey: blindingKey12,
       });
     } else if (setReissueTx && blindReqData.issuances) {
       blindReqData.issuances.push({
         txid: tx2Data.txins[1].txid,
-        vout: BigInt(tx2Data.txins[1].vout),
+        vout: tx2Data.txins[1].vout,
         assetBlindingKey: blindingKey11,
         tokenBlindingKey: blindingKey11,
       });
@@ -936,4 +993,9 @@ async function example() {
     }
   }
 };
-example();
+
+if ((!signTarget) && (!txData)) {
+  example();
+} else {
+  signTest();
+}
