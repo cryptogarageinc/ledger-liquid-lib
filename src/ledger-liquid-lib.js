@@ -7,8 +7,9 @@ function convertErrorCode(buf) {
   return buf.readUInt16BE();
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function debugSendLog(funcName, buffer) {
-  console.log(funcName, buffer.toString('hex'));
+  // console.log(funcName, buffer.toString('hex'));
 }
 
 function reverseBuffer(buf) {
