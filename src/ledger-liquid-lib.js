@@ -733,7 +733,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       };
     }
     const dectx = cfdjs.ElementsDecodeRawTransaction({
-      hex: proposalTransaction, network: this.network,
+      hex: proposalTransaction, network: this.networkType,
       mainchainNetwork: this.mainchainNetwork});
 
     const amountValueList = [];
@@ -781,7 +781,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
         const desc = cfdjs.ParseDescriptor({
           isElements: true,
           descriptor: utxo.descriptor,
-          network: this.network,
+          network: this.networkType,
         });
         if (('scripts' in desc) && (desc.scripts.length > 0) &&
             ('redeemScript' in desc.scripts[desc.scripts.length - 1])) {
