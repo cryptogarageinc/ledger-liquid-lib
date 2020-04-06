@@ -1,6 +1,6 @@
 /* eslint-disable require-jsdoc */
 import * as cfdjs from 'cfd-js';
-import {LedgerLiquidWrapper, WalletUtxoData} from './src/ledger-liquid-lib';
+import {LedgerLiquidWrapper, WalletUtxoData, SignatureData} from './src/ledger-liquid-lib';
 import * as ledgerLibDefine from './src/ledger-liquid-lib-defines';
 
 process.on('unhandledRejection', console.dir);
@@ -12,11 +12,11 @@ let networkType = ledgerLibDefine.NetworkType.LiquidV1;
 let tx2InputCount = 2;
 // eslint-disable-next-line prefer-const
 let ignore1stCache = false;
-let addSignAddr4 = false;
+let addSignAddr4 = true;
 let signedTest = false;
 let signedAddTest = false;
 let setIssueTx = false;
-let setReissueTx = true;
+let setReissueTx = false;
 let authorizationPrivkey = '47ab8b0e5f8ea508808f9e03b804d623a7cb81cbf1f39d3e976eb83f9284ecde';
 let setAuthorization = false;
 let connectionTest = false;
@@ -24,6 +24,7 @@ let mnemonic = '';
 // mnemonic = 'call node debug-console.js ledger hood festival pony outdoor always jeans page help symptom adapt obtain image bird duty damage find sense wasp box mail vapor plug general kingdom';
 let txData = '';
 let signTarget = '';
+let fixedTest = false;
 
 for (let i = 2; i < process.argv.length; i++) {
   if (process.argv[i]) {
@@ -47,11 +48,13 @@ for (let i = 2; i < process.argv.length; i++) {
       setIssueTx = true;
     } else if (process.argv[i] === '-r') {
       setReissueTx = true;
+    } else if (process.argv[i] === '-f') {
+      fixedTest = true;
     } else if (i+1 < process.argv.length) {
       if (process.argv[i] === '-h') {
         ++i;
         hashType = process.argv[i];
-      } else if (process.argv[i] === '-a') {
+      } else if (process.argv[i] === '-ak') {
         ++i;
         if (process.argv[i].length === 64) {
           authorizationPrivkey = process.argv[i];
@@ -74,52 +77,349 @@ const sleep = (msec: number) => new Promise(
     (resolve) => setTimeout(resolve, msec));
 
 async function execSign(txHex: string,
-    signUtxoList: WalletUtxoData[]): Promise<string> {
-  // connect wait test
+    signUtxoList: WalletUtxoData[], mnemonicWords: string): Promise<string> {
+  let sigRet;
   const liquidLib = new LedgerLiquidWrapper(networkType);
-  if (connectionTest) {
-    let connRet = await liquidLib.connect(60, '');
+  let parentExtkey = '';
+  const mainchainNwType = (networkType === 'liquidv1') ? 'mainnet' : 'regtest';
+  if (!mnemonicWords) {
+    // connect wait test
+    const connRet = await liquidLib.connect(60, '');
     if (!connRet.success) {
-      console.log('connection fail.(1)', connRet);
+      console.log('connection failed. ', connRet);
       return '';
     }
-    for (let connTestCount = 0; connTestCount < 120; ++connTestCount) {
-      const connCheckRet = await liquidLib.isConnected();
-      if (connCheckRet.success) {
-        console.log('10 sec wait start.');
-        await sleep(10000);
-        console.log('10 sec wait end.');
-        connTestCount += 10;
-      } else if (connCheckRet.errorMessage === 'connection fail.') {
-        console.log('disconnect. start reconnection.');
-        connRet = await liquidLib.connect(60, '');
-        if (!connRet.success) {
-          console.log('connection fail. ', connRet);
-          break;
+
+    // get authorization start ---------------------------------
+    console.log('*** calc authorization start ***');
+    const authorizationHash = cfdjs.SerializeLedgerFormat({
+      tx: txHex,
+      isAuthorization: true,
+    });
+    console.log('SerializeLedgerFormat =', authorizationHash);
+
+    const authSig = cfdjs.CalculateEcSignature({
+      sighash: authorizationHash.sha256,
+      privkeyData: {
+        privkey: authorizationPrivkey,
+        wif: false,
+      },
+      isGrindR: false,
+    });
+    const authDerSigData = cfdjs.EncodeSignatureByDer({
+      signature: authSig.signature,
+      sighashType: 'all'});
+    const authDerSig = authDerSigData.signature.substring(
+        0, authDerSigData.signature.length - 2);
+    console.log(`*** calc authorization end. [${authDerSig}] ***`);
+    // get authorization end ---------------------------------
+
+    console.log('*** walletUtxoList ***', signUtxoList);
+    console.log('*** getSignature start. ***');
+    sigRet = await liquidLib.getSignature(txHex,
+        signUtxoList, authDerSig);
+    console.log(`*** getSignature end. ***`,
+        JSON.stringify(sigRet, (key, value) =>
+            typeof value === 'bigint' ? value.toString() : value, '  '));
+  } else {
+    const seed = cfdjs.ConvertMnemonicToSeed({
+      mnemonic: mnemonicWords.split(' '),
+      passphrase: '',
+    });
+    parentExtkey = cfdjs.CreateExtkeyFromSeed({
+      seed: seed.seed,
+      network: mainchainNwType,
+      extkeyType: 'extPrivkey',
+    }).extkey;
+
+    console.log('*** walletUtxoList ***', signUtxoList);
+    console.log('*** getSignature start. ***');
+    const signatureList: SignatureData[] = [];
+    for (const utxoData of signUtxoList) {
+      const extkey = cfdjs.CreateExtkeyFromParentPath({
+        extkey: parentExtkey,
+        extkeyType: 'extPrivkey',
+        network: mainchainNwType,
+        path: utxoData.bip32Path,
+      });
+      const pubkey = cfdjs.GetPubkeyFromExtkey({
+        extkey: extkey.extkey,
+        network: mainchainNwType,
+      });
+      const privkey = cfdjs.GetPrivkeyFromExtkey({
+        extkey: extkey.extkey,
+        wif: false,
+        isCompressed: false,
+        network: mainchainNwType,
+      });
+      const descriptor = (utxoData.descriptor) ? utxoData.descriptor : '';
+      const desc = cfdjs.ParseDescriptor({
+        isElements: true,
+        descriptor: descriptor,
+        network: networkType,
+      });
+      let redeemScript = '';
+      let signHashType = hashType;
+      if ((desc.scripts) && (desc.scripts.length > 0)) {
+        if ('redeemScript' in desc.scripts[desc.scripts.length - 1]) {
+          const scriptRef = desc.scripts[desc.scripts.length - 1];
+          redeemScript = (scriptRef.redeemScript) ? scriptRef.redeemScript : '';
         }
-        console.log('reconnect success.');
-      } else {
-        console.log('isConnected fail.(2)', connCheckRet);
+        signHashType = desc.scripts[0].hashType;
+      }
+      if (signHashType === 'p2sh-p2wpkh') {
+        signHashType = 'p2wpkh';
+      } else if (signHashType === 'p2sh-p2wsh') {
+        signHashType = 'p2wsh';
+      }
+      const sighash = cfdjs.CreateElementsSignatureHash({
+        tx: txHex,
+        txin: {
+          txid: utxoData.txid,
+          vout: utxoData.vout,
+          hashType: signHashType,
+          keyData: {
+            hex: (!redeemScript) ? pubkey.pubkey : redeemScript,
+            type: (!redeemScript) ? 'pubkey' : 'redeem_script',
+          },
+          amount: utxoData.amount,
+          confidentialValueCommitment: utxoData.valueCommitment,
+        },
+      });
+      const signature = cfdjs.CalculateEcSignature({
+        sighash: sighash.sighash,
+        privkeyData: {
+          privkey: privkey.privkey,
+          wif: false,
+        },
+        isGrindR: true,
+      });
+      const derSig = cfdjs.EncodeSignatureByDer({
+        signature: signature.signature,
+        sighashType: 'all',
+      });
+      signatureList.push({
+        utxoData: utxoData,
+        signature: derSig.signature,
+      });
+    }
+    sigRet = {
+      signatureList: signatureList,
+    };
+    console.log(`*** getSignature end. ***`,
+        JSON.stringify(sigRet, (key, value) =>
+            typeof value === 'bigint' ? value.toString() : value, '  '));
+  }
+
+  const signatureList = [{
+    txid: '',
+    vout: 0,
+    hashType: '',
+    redeemScript: '',
+    utxoData: signUtxoList[0],
+    address: '',
+    sigList: [{
+      signature: '',
+      pubkey: '',
+    }],
+  }];
+  for (const signatureData of sigRet.signatureList) {
+    const descriptor = (signatureData.utxoData.descriptor) ? signatureData.utxoData.descriptor : '';
+    let desc;
+    try {
+      desc = cfdjs.ParseDescriptor({
+        isElements: true,
+        descriptor: descriptor,
+        network: networkType,
+      });
+    } catch (e) {
+
+    }
+    let pubkeyData;
+    if (!mnemonicWords) {
+      const pubkeyRet = await await liquidLib.getWalletPublicKey(
+          signatureData.utxoData.bip32Path);
+      pubkeyData = pubkeyRet.publicKey;
+    } else {
+      const extkey = cfdjs.CreateExtkeyFromParentPath({
+        extkey: parentExtkey,
+        extkeyType: 'extPubkey',
+        network: mainchainNwType,
+        path: signatureData.utxoData.bip32Path,
+      });
+      const pubkey = cfdjs.GetPubkeyFromExtkey({
+        extkey: extkey.extkey,
+        network: mainchainNwType,
+      });
+      pubkeyData = pubkey.pubkey;
+    }
+    let redeemScript = '';
+    let sigHashType = hashType;
+    if ((desc) && (desc.scripts) && (desc.scripts.length > 0)) {
+      if ('redeemScript' in desc.scripts[desc.scripts.length - 1]) {
+        const scriptRef = desc.scripts[desc.scripts.length - 1];
+        redeemScript = (scriptRef.redeemScript) ? scriptRef.redeemScript : '';
+      }
+      sigHashType = desc.scripts[0].hashType;
+    } else {
+      // const sighashByte = Buffer.from(signatureData.signature, 'hex');
+      redeemScript = (signatureData.utxoData.redeemScript) ? signatureData.utxoData.redeemScript : '';
+      sigHashType = (!redeemScript) ? 'p2wpkh' : 'p2wsh';
+    }
+    let verifyHashType = sigHashType;
+    if (verifyHashType === 'p2sh-p2wpkh') {
+      verifyHashType = 'p2wpkh';
+    } else if (verifyHashType === 'p2sh-p2wsh') {
+      verifyHashType = 'p2wsh';
+    }
+    try {
+      const rawSignatureRet = cfdjs.DecodeDerSignatureToRaw({
+        signature: signatureData.signature,
+      });
+      const verifySig = cfdjs.VerifySignature({
+        tx: txHex,
+        isElements: true,
+        txin: {
+          txid: signatureData.utxoData.txid,
+          vout: signatureData.utxoData.vout,
+          signature: rawSignatureRet.signature,
+          pubkey: pubkeyData,
+          redeemScript: redeemScript,
+          hashType: verifyHashType,
+          sighashType: 'all',
+          amount: signatureData.utxoData.amount,
+          confidentialValueCommitment: signatureData.utxoData.valueCommitment,
+        },
+      });
+      console.log('verifySigRet =', verifySig);
+    } catch (e) {
+      console.log('verifySignature fail. =',
+          JSON.stringify(signatureData, (key, value) =>
+              typeof value === 'bigint' ? value.toString() : value, '  '));
+      console.warn(e);
+    }
+    let isFind = false;
+    for (const sigTarget of signatureList) {
+      if ((sigTarget.txid === signatureData.utxoData.txid) &&
+        (sigTarget.vout === signatureData.utxoData.vout)) {
+        sigTarget.sigList.push({
+          signature: signatureData.signature,
+          pubkey: pubkeyData,
+        });
+        isFind = true;
         break;
       }
-      await sleep(1000);
     }
-
-    return '';
+    if (!isFind) {
+      signatureList.push({
+        txid: signatureData.utxoData.txid,
+        vout: signatureData.utxoData.vout,
+        hashType: sigHashType,
+        redeemScript: redeemScript,
+        utxoData: signatureData.utxoData,
+        address: (desc && desc.address) ? desc.address : '',
+        sigList: [{
+          signature: signatureData.signature,
+          pubkey: pubkeyData,
+        }],
+      });
+    }
+  }
+  let tx = txHex;
+  const signTxins = [];
+  for (const sigData of signatureList) {
+    if (!sigData.txid) continue;
+    if (!sigData.address) continue;
+    let signedTx;
+    if (!sigData.redeemScript) {
+      signedTx = cfdjs.AddPubkeyHashSign({
+        tx: tx,
+        isElements: true,
+        txin: {
+          txid: sigData.txid,
+          vout: sigData.vout,
+          signParam: {
+            hex: sigData.sigList[0].signature,
+            derEncode: false,
+          },
+          pubkey: sigData.sigList[0].pubkey,
+          hashType: sigData.hashType,
+        },
+      });
+    } else {
+      const jsonParam = {
+        tx: tx,
+        isElements: true,
+        txin: {
+          txid: sigData.txid,
+          vout: sigData.vout,
+          signParams: [
+            {
+              hex: sigData.sigList[0].signature,
+              derEncode: false,
+              relatedPubkey: sigData.sigList[0].pubkey,
+            },
+          ],
+          redeemScript: (hashType === 'p2sh') ? sigData.redeemScript : '',
+          witnessScript: (hashType === 'p2sh') ? '' : sigData.redeemScript,
+          hashType: hashType,
+        },
+      };
+      for (let i = 1; i < sigData.sigList.length; ++i) {
+        jsonParam.txin.signParams.push({
+          hex: sigData.sigList[i].signature,
+          derEncode: false,
+          relatedPubkey: sigData.sigList[i].pubkey,
+        });
+      }
+      // console.log('jsonParam => ', JSON.stringify(jsonParam, null, '  '));
+      signedTx = cfdjs.AddMultisigSign(jsonParam);
+    }
+    signTxins.push({
+      txid: sigData.txid,
+      vout: sigData.vout,
+      address: sigData.address,
+      amount: sigData.utxoData.amount,
+      descriptor: sigData.utxoData.descriptor,
+      confidentialValueCommitment: sigData.utxoData.valueCommitment,
+    });
+    tx = signedTx.hex;
+  }
+  const reqVerifyJson = {
+    tx: tx,
+    isElements: true,
+    txins: signTxins,
+  };
+  if (signTxins.length > 0) {
+    const verifyRet = cfdjs.VerifySign(reqVerifyJson);
+    console.log('\n*** VerifySign ***\n', JSON.stringify(verifyRet, null, '  '));
   }
 
-  const connRet = await liquidLib.connect(60, '');
-  if (!connRet.success) {
-    console.log('connection failed. ', connRet);
-    return '';
-  }
-
-  return '';
+  return tx;
 }
 
 async function signTest() {
   // parse signTarget -> WalletUtxoData
-  // call execSign
+  const utxoList = signTarget.split(' ');
+  const utxoDataList: WalletUtxoData[] = [];
+  for (const utxoText of utxoList) {
+    const infoList = utxoText.split(':');
+    utxoDataList.push({
+      bip32Path: infoList[0],
+      txid: infoList[1],
+      vout: parseInt(infoList[2]),
+      amount: (infoList[3].length === 66) ? 0n : BigInt(infoList[3]),
+      valueCommitment: (infoList[3].length === 66) ? infoList[3] : '',
+      descriptor: infoList[4],
+    });
+  }
+
+  const tx = await execSign(txData, utxoDataList, '');
+  console.log('*** signed tx ***\n', tx);
+  if (mnemonic) {
+    const tx = await execSign(txData, utxoDataList, mnemonic);
+    console.log('*** mnemonic signed tx ***\n', tx);
+  }
 }
 
 async function example() {
@@ -266,7 +566,6 @@ async function example() {
   const mainchainNwType = (networkType === 'liquidv1') ? 'mainnet' : 'regtest';
   let isScriptHash = false;
   let redeemScript;
-  let scriptSigSegwit;
   let address;
   let descriptor = '';
   let descriptor4 = '';
@@ -379,7 +678,6 @@ async function example() {
       address = {
         address: multisigAddr.address,
       };
-      scriptSigSegwit = multisigAddr.redeemScript;
       descriptor = `sh(${descriptor})`;
     } else if (hashType === 'p2wsh') {
       address = {
@@ -554,12 +852,14 @@ async function example() {
     vout: (!dectx1.vout) ? 0 : dectx1.vout[0].n,
     amount: tx1Data.txouts[0].amount,
     value: valueCommitment,
+    descriptor: descriptor,
   };
   const utxo2 = {
     txid: dectx1.txid,
     vout: (!dectx1.vout) ? 0 : dectx1.vout[input2Vout].n,
     amount: inputAmount2,
     value: valueCommitment2,
+    descriptor: descriptor4,
   };
 
   let outAmount1 = 4000000n;
@@ -719,7 +1019,6 @@ async function example() {
     mainchainNetwork: mainchainNwType});
   console.log('*** blind dectx2 ***\n', JSON.stringify(dectx2, null, '  '));
 
-  let sigRet;
   if (signedTest) {
     console.log('*** before sign rawtx ***\n', blindTx2.hex);
     const signed = cfdjs.SignWithPrivkey({
@@ -792,31 +1091,6 @@ async function example() {
     }
     return;
   } else {
-    // get authorization start ---------------------------------
-    console.log('*** calc authorization start ***');
-    const authorizationHash = cfdjs.SerializeLedgerFormat({
-      tx: blindTx2.hex,
-      isAuthorization: true,
-    });
-    console.log('SerializeLedgerFormat =', authorizationHash);
-
-    const authSig = cfdjs.CalculateEcSignature({
-      sighash: authorizationHash.sha256,
-      privkeyData: {
-        privkey: authorizationPrivkey,
-        wif: false,
-        network: 'mainnet',
-      },
-      isGrindR: false,
-    });
-    const authDerSigData = cfdjs.EncodeSignatureByDer({
-      signature: authSig.signature,
-      sighashType: 'all'});
-    const authDerSig = authDerSigData.signature.substring(
-        0, authDerSigData.signature.length - 2);
-    console.log(`*** calc authorization end. [${authDerSig}] ***`);
-    // get authorization end ---------------------------------
-
     let walletUtxoList = [{
       bip32Path: PATH3,
       txid: utxo.txid,
@@ -824,6 +1098,7 @@ async function example() {
       amount: utxo.amount,
       valueCommitment: utxo.value,
       redeemScript: redeemScript,
+      descriptor: utxo.descriptor,
     }];
     if (!isScriptHash && (tx2InputCount === 2) && addSignAddr4) {
       if (ignore1stCache) {
@@ -836,6 +1111,7 @@ async function example() {
         amount: utxo2.amount,
         valueCommitment: utxo2.value,
         redeemScript: '',
+        descriptor: utxo2.descriptor,
       });
     }
     if (isScriptHash) {
@@ -846,6 +1122,7 @@ async function example() {
         amount: utxo.amount,
         valueCommitment: utxo.value,
         redeemScript: redeemScript,
+        descriptor: utxo.descriptor,
       }, {
         bip32Path: PATH2,
         txid: utxo.txid,
@@ -853,148 +1130,53 @@ async function example() {
         amount: utxo.amount,
         valueCommitment: utxo.value,
         redeemScript: redeemScript,
+        descriptor: utxo.descriptor,
       }];
     }
-    console.log('*** walletUtxoList ***', walletUtxoList);
-    console.log('*** getSignature start. ***');
-    sigRet = await liquidLib.getSignature(blindTx2.hex,
-        walletUtxoList, authDerSig);
-    console.log(`*** getSignature end. ***`,
-        JSON.stringify(sigRet, (key, value) =>
-            typeof value === 'bigint' ? value.toString() : value, '  '));
-  }
-
-  // FIXME(k-matsuzawa): wait for blinding
-  // const ret1 = await liquidGetValueBlindingFactor(transport, 0, true);
-  // const ret2 = await liquidGetValueBlindingFactor(transport, 0, false);
-  // const ret3 = await liquidGetTXBlindingKey(transport);
-  // console.log('*** ret1 ***\n', ret1);
-  // console.log('*** ret2 ***\n', ret2);
-  // console.log('*** ret3 ***\n', ret3, '\n');
-
-  let signedTx;
-  if (!sigRet.success) {
-    // error
-  } else if (!isScriptHash) {
-    signedTx = cfdjs.AddPubkeyHashSign({
-      tx: blindTx2.hex,
-      isElements: true,
-      txin: {
-        txid: sigRet.signatureList[0].utxoData.txid,
-        vout: sigRet.signatureList[0].utxoData.vout,
-        signParam: {
-          hex: sigRet.signatureList[0].signature,
-          derEncode: false,
-        },
-        pubkey: pubkey3,
-        hashType: hashType,
-      },
-    });
-  } else {
-    const jsonParam = {
-      tx: blindTx2.hex,
-      isElements: true,
-      txin: {
-        txid: sigRet.signatureList[0].utxoData.txid,
-        vout: sigRet.signatureList[0].utxoData.vout,
-        signParams: [
-          {
-            hex: sigRet.signatureList[0].signature,
-            derEncode: false,
-            relatedPubkey: pubkey3,
-          },
-          {
-            hex: sigRet.signatureList[1].signature,
-            derEncode: false,
-            relatedPubkey: pubkey2,
-          },
-        ],
-        redeemScript: scriptSigSegwit,
-        witnessScript: redeemScript,
-        hashType: hashType,
-      },
-    };
-    // console.log('jsonParam => ', JSON.stringify(jsonParam, null, '  '));
-    signedTx = cfdjs.AddMultisigSign(jsonParam);
-  }
-
-  console.log('signedTx => ', signedTx);
-
-  if (sigRet.success && signedTx !== undefined) {
-    console.log('\n===== VerifySign =====');
-    const reqVerifyJson = {
-      tx: signedTx.hex,
-      isElements: true,
-      txins: [{
-        txid: sigRet.signatureList[0].utxoData.txid,
-        vout: sigRet.signatureList[0].utxoData.vout,
-        address: address.address,
-        amount: utxo.amount,
-        descriptor: descriptor,
-        confidentialValueCommitment: utxo.value,
-      }],
-    };
-    if (!isScriptHash && (tx2InputCount === 2) && addSignAddr4) {
-      const index = (ignore1stCache) ? 0 : 1;
-      const verify2Data = {
-        txid: sigRet.signatureList[index].utxoData.txid,
-        vout: sigRet.signatureList[index].utxoData.vout,
-        address: address4.address,
-        amount: utxo2.amount,
-        descriptor: descriptor4,
-        confidentialValueCommitment: utxo2.value,
-      };
-      if (ignore1stCache) {
-        reqVerifyJson.txins[0] = verify2Data;
-      } else {
-        reqVerifyJson.txins.push(verify2Data);
-      }
-    }
-    const verifyRet = cfdjs.VerifySign(reqVerifyJson);
-    console.log('\n*** VerifySign ***\n', JSON.stringify(verifyRet, null, '  '));
-    if (!verifyRet.success) {
-      const decSignedTx = cfdjs.ElementsDecodeRawTransaction({
-        hex: signedTx.hex, network: networkType,
-        mainchainNetwork: mainchainNwType});
-      console.log('*** blind decSignedTx2 ***\n',
-          JSON.stringify(decSignedTx, null, '  '));
-      console.log('\n*** VerifySignRequest ***\n',
-          reqVerifyJson.txins);
-      console.log('\n*** VerifySign Failed. ***\n');
-    }
-
-    try {
-      let verifyHashType = hashType;
-      if ((hashType === 'p2sh-p2wpkh') || (hashType === 'p2sh-p2wsh')) {
-        verifyHashType = hashType.substring(5);
-      }
-      const rawSignatureRet = cfdjs.DecodeDerSignatureToRaw({
-        signature: sigRet.signatureList[0].signature,
-      });
-      const verifySig = cfdjs.VerifySignature({
-        tx: blindTx2.hex,
-        isElements: true,
-        txin: {
-          txid: sigRet.signatureList[0].utxoData.txid,
-          vout: sigRet.signatureList[0].utxoData.vout,
-          signature: rawSignatureRet.signature,
-          pubkey: pubkey3,
-          redeemScript: redeemScript,
-          hashType: verifyHashType,
-          sighashType: 'all',
-          amount: utxo.amount,
-          confidentialValueCommitment: utxo.value,
-        },
-      });
-      console.log('verifySigRet =', verifySig);
-    } catch (e) {
-      console.log('verifySignature fail.');
-      console.warn(e);
+    const txHex = await execSign(blindTx2.hex, walletUtxoList, '');
+    console.log('*** signed tx hex ***\n', txHex);
+    if (mnemonic) {
+      const tx = await execSign(blindTx2.hex, walletUtxoList, mnemonic);
+      console.log('*** mnemonic signed tx ***\n', tx);
     }
   }
 };
 
-if ((!signTarget) && (!txData)) {
+async function execFixedTest() {
+  const txHex = '020000000002d026a265c15a249d6c7ae5fa7421904925438c6721b44339e25839479ec89a850000000000ffffffffd026a265c15a249d6c7ae5fa7421904925438c6721b44339e25839479ec89a850100000000ffffffff030125b251070e29ca19043cf33ccd7324e2ddab03ecc4ae0b5e77c4fc0e5cf6c95a0100000000008954400017a91492617485a7b6816675a8f9d450a36f442692dd77870125b251070e29ca19043cf33ccd7324e2ddab03ecc4ae0b5e77c4fc0e5cf6c95a0100000000000e7ef00017a914e5f656cd3ce7597eab209b4c9314e974eec2a86b870125b251070e29ca19043cf33ccd7324e2ddab03ecc4ae0b5e77c4fc0e5cf6c95a01000000000000c350000000000000';
+
+  let signedTx = cfdjs.SignWithPrivkey({
+    tx: txHex,
+    isElements: true,
+    txin: {
+      txid: '859ac89e473958e23943b421678c432549902174fae57a6c9d245ac165a226d0',
+      vout: 0,
+      privkey: '80fabf46d8e9dd12fc59299f61a7638bac33d7d125677a37bcb4b3a0e32bb23f',
+      amount: 5000000n,
+      hashType: 'p2wpkh',
+    },
+  });
+  signedTx = cfdjs.SignWithPrivkey({
+    tx: signedTx.hex,
+    isElements: true,
+    txin: {
+      txid: '859ac89e473958e23943b421678c432549902174fae57a6c9d245ac165a226d0',
+      vout: 1,
+      privkey: '80fabf46d8e9dd12fc59299f61a7638bac33d7d125677a37bcb4b3a0e32bb23f',
+      amount: 5000000n,
+      hashType: 'p2wpkh',
+    },
+  });
+  const decSignedTx = cfdjs.ElementsDecodeRawTransaction({
+    hex: signedTx.hex, network: networkType,
+    mainchainNetwork: (networkType === 'liquidv1') ? 'mainnet' : 'regtest'});
+  console.log('signed hex =\n',
+      JSON.stringify(decSignedTx, null, '  '));
+}
+
+if (fixedTest) {
+  execFixedTest();
+} else if ((!signTarget) && (!txData)) {
   example();
 } else {
   signTest();
