@@ -17,6 +17,8 @@ let setIssueTx = 0;
 let setReissueTx = 0;
 let authorizationPrivkey = '47ab8b0e5f8ea508808f9e03b804d623a7cb81cbf1f39d3e976eb83f9284ecde';
 let setAuthorization = false;
+let setIssuanceToTop = 0;
+let setReissuanceToTop = 0;
 let connectionTest = false;
 let getLedgerPath = true;
 let mnemonic = '';
@@ -44,6 +46,16 @@ for (let i = 2; i < process.argv.length; i++) {
       setAuthorization = true;
     } else if (process.argv[i] === '-f') {
       fixedTest = true;
+    } else if (process.argv[i] === '-it') {
+      setIssuanceToTop = 2;
+      if (setReissuanceToTop) {
+        setIssuanceToTop = 1;
+      }
+    } else if (process.argv[i] === '-rit') {
+      setReissuanceToTop = 2;
+      if (setIssuanceToTop) {
+        setReissuanceToTop = 1;
+      }
     } else if (process.argv[i] === '-ic') {
       mnemonicCheck = false;
       getLedgerPath = false;
@@ -762,6 +774,7 @@ async function example() {
 
   const tx1InputCount = 1 + setReissueTx;
   const dummyTxid1 = '7461b02405414d79e79a5050684a333c922c1136f4bdff5fb94b551394edebbd';
+  const empty256 = '0000000000000000000000000000000000000000000000000000000000000000';
   const inputAmount = 5000000n;
   const inputAmount2 = 5000000n;
   const tx1Data = {
@@ -832,7 +845,7 @@ async function example() {
           assetAddress: pathData.confidentialAddress,
           tokenAmount: inputAmount2,
           tokenAddress: tokenPathData.confidentialAddress,
-          contractHash: '0000000000000000000000000000000000000000000000000000000000000000',
+          contractHash: empty256,
           isRemoveNonce: false,
           isBlind: true,
         }],
@@ -849,7 +862,6 @@ async function example() {
     }
     // console.log('issueTx =', tx1.hex);
   }
-  const empty256 = '0000000000000000000000000000000000000000000000000000000000000000';
   if (blindOpt.blind1) {
     if (signedTest) {
       console.log('*** before blind rawtx1 ***\n', tx1.hex);
@@ -1001,8 +1013,37 @@ async function example() {
     issuances: [],
   };
   let totalAsset = 0n;
+  let startOffset = 1;
+  if ((setReissuanceToTop > setIssuanceToTop) &&
+      (reissuePathList.length > 0)) {
+    startOffset = 0;
+    tx2Data.txins = [];
+    blindReqData.txins = [];
+    for (let i = 0; i < reissueTokenPathList.length; ++i) {
+      const pathData = reissueTokenPathList[i];
+      tx2Data.txins.push({
+        txid: dectx1.txid,
+        vout: pathData.vout,
+        sequence: 0xffffffff,
+      });
+      totalAsset += pathData.amount;
+      if (blindReqData.txins) {
+        const asset =
+          (pathData.issuanceData && pathData.issuanceData[0]) ?
+            pathData.issuanceData[0].token : asset1;
+        blindReqData.txins.push({
+          txid: dectx1.txid,
+          vout: pathData.vout,
+          amount: pathData.amount,
+          asset: (asset) ? asset : asset1,
+          assetBlindFactor: pathData.abf,
+          blindFactor: pathData.vbf,
+        });
+      }
+    }
+  }
   if (pathList.length > 0 && tx2Data.txins) {
-    for (let i = 1; i < pathList.length; ++i) {
+    for (let i = startOffset; i < pathList.length; ++i) {
       const pathData = pathList[i];
       tx2Data.txins.push({
         txid: dectx1.txid,
@@ -1024,26 +1065,28 @@ async function example() {
         });
       }
     }
-    for (let i = 0; i < reissueTokenPathList.length; ++i) {
-      const pathData = reissueTokenPathList[i];
-      tx2Data.txins.push({
-        txid: dectx1.txid,
-        vout: pathData.vout,
-        sequence: 0xffffffff,
-      });
-      totalAsset += pathData.amount;
-      if (blindReqData.txins) {
-        const asset =
-          (pathData.issuanceData && pathData.issuanceData[0]) ?
-            pathData.issuanceData[0].token : asset1;
-        blindReqData.txins.push({
+    if ((setReissuanceToTop <= setIssuanceToTop)) {
+      for (let i = 0; i < reissueTokenPathList.length; ++i) {
+        const pathData = reissueTokenPathList[i];
+        tx2Data.txins.push({
           txid: dectx1.txid,
           vout: pathData.vout,
-          amount: pathData.amount,
-          asset: (asset) ? asset : asset1,
-          assetBlindFactor: pathData.abf,
-          blindFactor: pathData.vbf,
+          sequence: 0xffffffff,
         });
+        totalAsset += pathData.amount;
+        if (blindReqData.txins) {
+          const asset =
+            (pathData.issuanceData && pathData.issuanceData[0]) ?
+              pathData.issuanceData[0].token : asset1;
+          blindReqData.txins.push({
+            txid: dectx1.txid,
+            vout: pathData.vout,
+            amount: pathData.amount,
+            asset: (asset) ? asset : asset1,
+            assetBlindFactor: pathData.abf,
+            blindFactor: pathData.vbf,
+          });
+        }
       }
     }
   }
@@ -1081,13 +1124,16 @@ async function example() {
   const issueList = [];
   if (setIssueTx) {
     let cnt = 0;
-    const startIdx = pathList.length - issuePathList.length;
-    for (let i = startIdx; i < pathList.length; ++i) {
+    const startIdx = (!setIssuanceToTop) ?
+        pathList.length - issuePathList.length : 0;
+    const maxIndex = (!setIssuanceToTop) ?
+        pathList.length : issuePathList.length;
+    for (let i = startIdx; i < maxIndex; ++i) {
       const pathData = issuePathList[cnt];
       const tokenData = issueTokenPathList[cnt];
       issueList.push({
-        txid: tx2Data.txins[i].txid,
-        vout: tx2Data.txins[i].vout,
+        txid: dectx1.txid,
+        vout: pathList[i].vout,
         assetAmount: inputAmount2,
         assetAddress: pathData.confidentialAddress,
         tokenAmount: inputAmount2,
@@ -1096,16 +1142,16 @@ async function example() {
         isBlind: true,
       });
       pathData.issuanceData.push({
-        txid: tx2Data.txins[i].txid,
-        vout: tx2Data.txins[i].vout,
+        txid: dectx1.txid,
+        vout: pathList[i].vout,
         asset: '',
         entropy: '',
         token: '',
       });
       if (blindReqData.issuances) {
         blindReqData.issuances.push({
-          txid: tx2Data.txins[i].txid,
-          vout: tx2Data.txins[i].vout,
+          txid: dectx1.txid,
+          vout: pathList[i].vout,
           assetBlindingKey: pathData.blindingKeyPair.privkey,
           tokenBlindingKey: tokenData.blindingKeyPair.privkey,
         });
@@ -1252,7 +1298,7 @@ async function example() {
   }
 
   if (!walletUtxoList) {
-    console.log('*** Sign target not found. ***');
+    console.log('*** Sign target not found. ***\n', signTargetIndex);
     return;
   }
   if (!directMnemonic) {
