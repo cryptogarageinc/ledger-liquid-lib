@@ -24,6 +24,7 @@ let getLedgerPath = true;
 let mnemonic = '';
 let mnemonicCheck = true;
 // mnemonic = 'call node debug-console.js ledger hood festival pony outdoor always jeans page help symptom adapt obtain image bird duty damage find sense wasp box mail vapor plug general kingdom';
+let dumpTx = false;
 let txData = '';
 let signTarget = '';
 let fixedTest = false;
@@ -46,6 +47,8 @@ for (let i = 2; i < process.argv.length; i++) {
       setAuthorization = true;
     } else if (process.argv[i] === '-f') {
       fixedTest = true;
+    } else if (process.argv[i] === '-p') {
+      dumpTx = true;
     } else if (process.argv[i] === '-it') {
       setIssuanceToTop = 2;
       if (setReissuanceToTop) {
@@ -333,6 +336,7 @@ async function execSign(txHex: string,
       signature: '',
       pubkey: '',
     }],
+    requireNum: 0,
   }];
   for (const signatureData of sigRet.signatureList) {
     const descriptor = (signatureData.utxoData.descriptor) ? signatureData.utxoData.descriptor : '';
@@ -366,10 +370,12 @@ async function execSign(txHex: string,
     }
     let redeemScript = '';
     let sigHashType = hashType;
+    let requireNum = 2;
     if ((desc) && (desc.scripts) && (desc.scripts.length > 0)) {
       if ('redeemScript' in desc.scripts[desc.scripts.length - 1]) {
         const scriptRef = desc.scripts[desc.scripts.length - 1];
         redeemScript = (scriptRef.redeemScript) ? scriptRef.redeemScript : '';
+        requireNum = (scriptRef.reqNum) ? scriptRef.reqNum : requireNum;
       }
       sigHashType = desc.scripts[0].hashType;
     } else {
@@ -433,6 +439,7 @@ async function execSign(txHex: string,
           signature: signatureData.signature,
           pubkey: pubkeyData,
         }],
+        requireNum: requireNum,
       });
     }
   }
@@ -476,7 +483,7 @@ async function execSign(txHex: string,
           hashType: hashType,
         },
       };
-      for (let i = 1; i < sigData.sigList.length; ++i) {
+      for (let i = 1; i < sigData.requireNum; ++i) {
         jsonParam.txin.signParams.push({
           hex: sigData.sigList[i].signature,
           derEncode: false,
@@ -1304,10 +1311,22 @@ async function example() {
   if (!directMnemonic) {
     const txHex = await execSign(blindTx2.hex, walletUtxoList, '');
     console.log('*** signed tx hex ***\n', txHex);
+    if (dumpTx) {
+      const decSignedTx = cfdjs.ElementsDecodeRawTransaction({
+        hex: txHex, network: networkType,
+        mainchainNetwork: mainchainNwType});
+      console.log('*** Signed Tx ***\n', JSON.stringify(decSignedTx, null, '  '));
+    }
   }
   if (mnemonic) {
     const tx = await execSign(blindTx2.hex, walletUtxoList, mnemonic);
     console.log('*** mnemonic signed tx ***\n', tx);
+    if (dumpTx) {
+      const decSignedTx = cfdjs.ElementsDecodeRawTransaction({
+        hex: tx, network: networkType,
+        mainchainNetwork: mainchainNwType});
+      console.log('*** Signed Tx ***\n', JSON.stringify(decSignedTx, null, '  '));
+    }
   }
 };
 
