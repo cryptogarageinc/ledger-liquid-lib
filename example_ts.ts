@@ -11,17 +11,20 @@ let networkType = ledgerLibDefine.NetworkType.LiquidV1;
 // eslint-disable-next-line prefer-const
 let tx2InputCount = 2;
 // eslint-disable-next-line prefer-const
-let ignore1stCache = false;
-let addSignAddr4 = true;
+let signTargetIndex = [0, 1];
 let signedTest = false;
-let signedAddTest = false;
-let setIssueTx = false;
-let setReissueTx = false;
+let setIssueTx = 0;
+let setReissueTx = 0;
 let authorizationPrivkey = '47ab8b0e5f8ea508808f9e03b804d623a7cb81cbf1f39d3e976eb83f9284ecde';
 let setAuthorization = false;
+let setIssuanceToTop = 0;
+let setReissuanceToTop = 0;
 let connectionTest = false;
+let getLedgerPath = true;
 let mnemonic = '';
+let mnemonicCheck = true;
 // mnemonic = 'call node debug-console.js ledger hood festival pony outdoor always jeans page help symptom adapt obtain image bird duty damage find sense wasp box mail vapor plug general kingdom';
+let dumpTx = false;
 let txData = '';
 let signTarget = '';
 let fixedTest = false;
@@ -34,22 +37,31 @@ for (let i = 2; i < process.argv.length; i++) {
       blindOpt.blind1 = false;
     } else if (process.argv[i] === '-nb2') {
       blindOpt.blind2 = false;
-    } else if (process.argv[i] === '-s2') {
-      addSignAddr4 = true;
+    } else if (process.argv[i] === '-dl') {
+      getLedgerPath = false;
     } else if (process.argv[i] === '-t') {
       signedTest = true;
-    } else if (process.argv[i] === '-ta') {
-      signedAddTest = true;
     } else if (process.argv[i] === '-tc') {
       connectionTest = true;
     } else if (process.argv[i] === '-a') {
       setAuthorization = true;
-    } else if (process.argv[i] === '-i') {
-      setIssueTx = true;
-    } else if (process.argv[i] === '-r') {
-      setReissueTx = true;
     } else if (process.argv[i] === '-f') {
       fixedTest = true;
+    } else if (process.argv[i] === '-p') {
+      dumpTx = true;
+    } else if (process.argv[i] === '-it') {
+      setIssuanceToTop = 2;
+      if (setReissuanceToTop) {
+        setIssuanceToTop = 1;
+      }
+    } else if (process.argv[i] === '-rit') {
+      setReissuanceToTop = 2;
+      if (setIssuanceToTop) {
+        setReissuanceToTop = 1;
+      }
+    } else if (process.argv[i] === '-ic') {
+      mnemonicCheck = false;
+      getLedgerPath = false;
     } else if (i+1 < process.argv.length) {
       if (process.argv[i] === '-h') {
         ++i;
@@ -62,12 +74,30 @@ for (let i = 2; i < process.argv.length; i++) {
       } else if (process.argv[i] === '-n') {
         ++i;
         mnemonic = process.argv[i];
+        getLedgerPath = false;
       } else if (process.argv[i] === '-txc') {
         ++i;
         txData = process.argv[i];
       } else if (process.argv[i] === '-st') {
         ++i;
         signTarget = process.argv[i];
+      } else if (process.argv[i] === '-uc') {
+        ++i;
+        tx2InputCount = parseInt(process.argv[i]);
+      } else if (process.argv[i] === '-i') {
+        ++i;
+        setIssueTx = parseInt(process.argv[i]);
+      } else if (process.argv[i] === '-ri') {
+        ++i;
+        setReissueTx = parseInt(process.argv[i]);
+      } else if (process.argv[i] === '-si') {
+        ++i;
+        const numArr = [];
+        const list = process.argv[i].split(',');
+        for (const input of list) {
+          numArr.push(parseInt(input));
+        }
+        signTargetIndex = numArr;
       }
     }
   }
@@ -75,6 +105,90 @@ for (let i = 2; i < process.argv.length; i++) {
 
 const sleep = (msec: number) => new Promise(
     (resolve) => setTimeout(resolve, msec));
+
+let mnemonicRootKey = '';
+function getExtKeyFromParent(bip32Path: string): string {
+  const mainchainNwType = (networkType === 'liquidv1') ? 'mainnet' : 'regtest';
+  if (!mnemonicRootKey) {
+    const seed = cfdjs.ConvertMnemonicToSeed({
+      mnemonic: mnemonic.split(' '),
+      passphrase: '',
+    });
+    mnemonicRootKey = cfdjs.CreateExtkeyFromSeed({
+      seed: seed.seed,
+      network: mainchainNwType,
+      extkeyType: 'extPrivkey',
+    }).extkey;
+  }
+  const extkey = cfdjs.CreateExtkeyFromParentPath({
+    extkey: mnemonicRootKey,
+    extkeyType: 'extPubkey',
+    path: bip32Path,
+    network: mainchainNwType,
+  });
+  return extkey.extkey;
+}
+
+function getPubkeyFromParent(bip32Path: string): string {
+  const mainchainNwType = (networkType === 'liquidv1') ? 'mainnet' : 'regtest';
+  if (!mnemonicRootKey) {
+    const seed = cfdjs.ConvertMnemonicToSeed({
+      mnemonic: mnemonic.split(' '),
+      passphrase: '',
+    });
+    mnemonicRootKey = cfdjs.CreateExtkeyFromSeed({
+      seed: seed.seed,
+      network: mainchainNwType,
+      extkeyType: 'extPrivkey',
+    }).extkey;
+  }
+  const extkey = cfdjs.CreateExtkeyFromParentPath({
+    extkey: mnemonicRootKey,
+    extkeyType: 'extPubkey',
+    path: bip32Path,
+    network: mainchainNwType,
+  });
+  const pubkey = cfdjs.GetPubkeyFromExtkey({
+    extkey: extkey.extkey,
+    network: mainchainNwType,
+  });
+  return pubkey.pubkey;
+}
+
+interface KeyPair {
+  pubkey: string;
+  privkey: string;
+}
+function getKeyPairFromParent(bip32Path: string): KeyPair {
+  const mainchainNwType = (networkType === 'liquidv1') ? 'mainnet' : 'regtest';
+  if (!mnemonicRootKey) {
+    const seed = cfdjs.ConvertMnemonicToSeed({
+      mnemonic: mnemonic.split(' '),
+      passphrase: '',
+    });
+    mnemonicRootKey = cfdjs.CreateExtkeyFromSeed({
+      seed: seed.seed,
+      network: mainchainNwType,
+      extkeyType: 'extPrivkey',
+    }).extkey;
+  }
+  const extkey = cfdjs.CreateExtkeyFromParentPath({
+    extkey: mnemonicRootKey,
+    extkeyType: 'extPrivkey',
+    path: bip32Path,
+    network: mainchainNwType,
+  });
+  const privkey = cfdjs.GetPrivkeyFromExtkey({
+    extkey: extkey.extkey,
+    network: mainchainNwType,
+    wif: false,
+  });
+  const pubkey = cfdjs.GetPubkeyFromExtkey({
+    extkey: extkey.extkey,
+    network: mainchainNwType,
+  });
+  return {pubkey: pubkey.pubkey, privkey: privkey.privkey};
+}
 
 async function execSign(txHex: string,
     signUtxoList: WalletUtxoData[], mnemonicWords: string): Promise<string> {
@@ -222,6 +336,7 @@ async function execSign(txHex: string,
       signature: '',
       pubkey: '',
     }],
+    requireNum: 0,
   }];
   for (const signatureData of sigRet.signatureList) {
     const descriptor = (signatureData.utxoData.descriptor) ? signatureData.utxoData.descriptor : '';
@@ -255,10 +370,12 @@ async function execSign(txHex: string,
     }
     let redeemScript = '';
     let sigHashType = hashType;
+    let requireNum = 2;
     if ((desc) && (desc.scripts) && (desc.scripts.length > 0)) {
       if ('redeemScript' in desc.scripts[desc.scripts.length - 1]) {
         const scriptRef = desc.scripts[desc.scripts.length - 1];
         redeemScript = (scriptRef.redeemScript) ? scriptRef.redeemScript : '';
+        requireNum = (scriptRef.reqNum) ? scriptRef.reqNum : requireNum;
       }
       sigHashType = desc.scripts[0].hashType;
     } else {
@@ -322,6 +439,7 @@ async function execSign(txHex: string,
           signature: signatureData.signature,
           pubkey: pubkeyData,
         }],
+        requireNum: requireNum,
       });
     }
   }
@@ -365,7 +483,7 @@ async function execSign(txHex: string,
           hashType: hashType,
         },
       };
-      for (let i = 1; i < sigData.sigList.length; ++i) {
+      for (let i = 1; i < sigData.requireNum; ++i) {
         jsonParam.txin.signParams.push({
           hex: sigData.sigList[i].signature,
           derEncode: false,
@@ -422,100 +540,89 @@ async function signTest() {
   }
 }
 
-async function example() {
-  const addrType = ledgerLibDefine.AddressType.Bech32;
+async function execConnectionTest() {
+  // connect wait test
+  const liquidLib = new LedgerLiquidWrapper(networkType);
+  let connRet = await liquidLib.connect(60, '');
+  if (!connRet.success) {
+    console.log('connection fail.(1)', connRet);
+    return;
+  }
+  for (let connTestCount = 0; connTestCount < 120; ++connTestCount) {
+    const connCheckRet = await liquidLib.isConnected();
+    if (connCheckRet.success) {
+      console.log('10 sec wait start.');
+      await sleep(10000);
+      console.log('10 sec wait end.');
+      connTestCount += 10;
+    } else if (connCheckRet.errorMessage === 'connection fail.') {
+      console.log('disconnect. start reconnection.');
+      connRet = await liquidLib.connect(60, '');
+      if (!connRet.success) {
+        console.log('connection fail. ', connRet);
+        break;
+      }
+      console.log('reconnect success.');
+    } else {
+      console.log('isConnected fail.(2)', connCheckRet);
+      break;
+    }
+    await sleep(1000);
+  }
+}
 
-  const pubkeyHashType = 'p2sh-p2wpkh';
+async function example() {
+  // const addrType = ledgerLibDefine.AddressType.Bech32;
+
   const asset1 = '5ac9f65c0efcc4775e0baec4ec03abdde22473cd3cf33c0419ca290e0751b225';
 
-  if (setReissueTx) {
+  if (tx2InputCount < 2) {
     tx2InputCount = 2;
-    blindOpt.blind1 = true;
-    blindOpt.blind2 = true;
+  }
+  if (!getLedgerPath && !mnemonic) {
+    getLedgerPath = true;
   }
 
   // connect wait test
   const liquidLib = new LedgerLiquidWrapper(networkType);
-  if (connectionTest) {
-    let connRet = await liquidLib.connect(60, '');
-    if (!connRet.success) {
-      console.log('connection fail.(1)', connRet);
-      return;
-    }
-    for (let connTestCount = 0; connTestCount < 120; ++connTestCount) {
-      const connCheckRet = await liquidLib.isConnected();
-      if (connCheckRet.success) {
-        console.log('10 sec wait start.');
-        await sleep(10000);
-        console.log('10 sec wait end.');
-        connTestCount += 10;
-      } else if (connCheckRet.errorMessage === 'connection fail.') {
-        console.log('disconnect. start reconnection.');
-        connRet = await liquidLib.connect(60, '');
-        if (!connRet.success) {
-          console.log('connection fail. ', connRet);
-          break;
-        }
-        console.log('reconnect success.');
-      } else {
-        console.log('isConnected fail.(2)', connCheckRet);
-        break;
-      }
-      await sleep(1000);
-    }
-
-    return;
-  }
-
   const connRet = await liquidLib.connect(60, '');
   if (!connRet.success) {
     console.log('connection failed. ', connRet);
     return;
   }
 
-  const parentAddr = await liquidLib.getWalletPublicKey('44\'/0\'/0\'/0');
-  console.log('parentAddr -> ', parentAddr);
-
-  const PATH1 = '44\'/0\'/0\'/0/0';
-  const PATH2 = '44\'/0\'/0\'/0/1';
-  const PATH3 = '44\'/0\'/0\'/0/2';
-  const PATH4 = '44\'/0\'/0\'/0/3';
-  const PATH11 = '44\'/0\'/0\'/0/11';
-  const PATH12 = '44\'/0\'/0\'/0/12';
-  console.log('*** publickey test start ***');
-  const addr1 = await liquidLib.getWalletPublicKey(PATH1);
-  console.log('addr1 =', addr1);
+  const mainchainNwType = (networkType === 'liquidv1') ? 'mainnet' : 'regtest';
+  const parentPath = '44\'/0\'/0\'/0';
+  const childNumber = 0;
+  const childPath = parentPath + '/' + childNumber;
+  const parentPubkey = await liquidLib.getWalletPublicKey(parentPath);
+  console.log('parentPubkey -> ', parentPubkey);
 
   const extkey = cfdjs.CreateExtkeyFromParentKey({
-    network: 'mainnet',
-    parentKey: parentAddr.publicKey,
+    network: mainchainNwType,
+    parentKey: parentPubkey.publicKey,
     parentDepth: 4,
-    parentChainCode: parentAddr.chainCode,
-    childNumber: 0,
+    parentChainCode: parentPubkey.chainCode,
+    childNumber: childNumber,
   });
-  console.log('extkey =', extkey);
+  console.log('childExtkey =', extkey);
   const keyInfo = cfdjs.GetExtkeyInfo(extkey);
-  console.log('extkeyInfo =', keyInfo);
+  console.log('childExtkeyInfo =', keyInfo);
 
-  const addr2 = await liquidLib.getWalletPublicKey(PATH2);
-  console.log('addr2 =', addr2);
-  const addr3 = await liquidLib.getWalletPublicKey(PATH3);
-  console.log('addr3 =', addr3);
-  const addr4 = await liquidLib.getWalletPublicKey(PATH4);
-  console.log('addr4 =', addr4);
-  const addr11 = await liquidLib.getAddress(PATH11, addrType);
-  console.log('addr11 =', addr11);
-  const addr12 = await liquidLib.getAddress(PATH12, addrType);
-  console.log('addr12 =', addr12);
+  const xpub = await liquidLib.getXpubKey('44\'/0\'/0\'');
+  console.log('getXpubKey =', xpub);
 
-  const pubkey1 = addr1.publicKey;
-  const pubkey2 = addr2.publicKey;
-  let pubkey3 = addr3.publicKey;
-  const pubkey4 = addr4.publicKey;
-  console.log('pubkey1 => ', pubkey1);
-  console.log('pubkey2 => ', pubkey2);
-  console.log('pubkey3 => ', pubkey3);
-  console.log('pubkey4 => ', pubkey4);
+  let directMnemonic = false;
+  if (mnemonic) {
+    const mnemonicExtPubkey = getExtKeyFromParent(childPath);
+    if (extkey.extkey !== mnemonicExtPubkey) {
+      if (mnemonicCheck) {
+        console.log('unmatch mnemonic. extPubkey =', mnemonicExtPubkey);
+        return;
+      }
+      directMnemonic = true;
+    }
+  }
 
   if (setAuthorization) {
     const authKey = cfdjs.GetPubkeyFromPrivkey({
@@ -526,229 +633,171 @@ async function example() {
     console.log('--HEADLESS LIQUID SEND AUTHORIZATION PUBLIC KEY --\n', setupRet);
   }
 
-  // eslint-disable-next-line prefer-const
-
-  const address1 = cfdjs.CreateAddress({
-    'keyData': {
-      'hex': pubkey1,
-      'type': 'pubkey',
-    },
-    'network': networkType,
-    'isElements': true,
-    'hashType': pubkeyHashType,
-  });
-  console.log('address1 => ', address1);
-  const address2 = cfdjs.CreateAddress({
-    'keyData': {
-      'hex': pubkey2,
-      'type': 'pubkey',
-    },
-    'network': networkType,
-    'isElements': true,
-    'hashType': pubkeyHashType,
-  });
-  console.log('address2 => ', address2);
-  let address4 = cfdjs.CreateAddress({
-    'keyData': {
-      'hex': pubkey4,
-      'type': 'pubkey',
-    },
-    'network': networkType,
-    'isElements': true,
-    'hashType': pubkeyHashType,
-  });
-  console.log('address4 => ', address4);
-
-
-  const testPubkey4 = '030fa835a11a2cb01c58e2358dbdcc6d85e35cb2a38ca3d3d660aadb4bda2ad7f9';
-  const testPrivkey4 = '7df5b968dee8f54c4b3cacf0386a4cab0eb7f6a10fc15f3b647bda227f4111b7';
-
-  const mainchainNwType = (networkType === 'liquidv1') ? 'mainnet' : 'regtest';
-  let isScriptHash = false;
-  let redeemScript;
-  let address;
-  let descriptor = '';
-  let descriptor4 = '';
-  let privkey3Hex = '';
-  if ((hashType === 'p2sh-p2wpkh') || (hashType === 'p2wpkh')) {
-    const address3 = cfdjs.CreateAddress({
-      'keyData': {
-        'hex': pubkey3,
-        'type': 'pubkey',
-      },
-      'network': networkType,
-      'isElements': true,
-      'hashType': hashType,
-    });
-    console.log('address3 => ', address3);
-    // const confKeyRet = await liquidGetPublicBlindingKey(transport, address4.lockingScript);
-    // console.log('--LIQUID GET PUBLIC BLINDING KEY 4--\n', confKeyRet);
-
-    address = address3;
-    descriptor = `wpkh(${pubkey3})`;
-    descriptor4 = `wpkh(${pubkey4})`;
-    if (hashType === 'p2sh-p2wpkh') {
-      descriptor = `sh(${descriptor})`;
-      descriptor4 = `sh(${descriptor4})`;
-    }
-
-    if (signedTest) {
-      tx2InputCount = 2;
-      // 44h/0h/0h/0/0
-      // xprvA35Stvys6RBQD5YqqfWyiyZSVE6JCVwEea37zrG6MsxaZ7xbCUAvbQzPYNddJ2QGBxea7jHvZh6NyKMBC97wspmZRHQqnHnevkhwy78Cehg
-      // privkey: L1YRuEojez8mj6AsEPVA74Kvv7oqCUyzaWLLKrM8NZ46qr4FhLx
-      //   (hex): 80fabf46d8e9dd12fc59299f61a7638bac33d7d125677a37bcb4b3a0e32bb23f
-      // pubkey: '021a8cffee67e4a5d8e9cfe0e6dbcc86484b425e93508522224c32bbba96fb6d82'
-      pubkey3 = '021a8cffee67e4a5d8e9cfe0e6dbcc86484b425e93508522224c32bbba96fb6d82';
-      privkey3Hex = '80fabf46d8e9dd12fc59299f61a7638bac33d7d125677a37bcb4b3a0e32bb23f';
-      if (mnemonic.length > 0) {
-        const seed = cfdjs.ConvertMnemonicToSeed({
-          mnemonic: mnemonic.split(' '),
-          passphrase: '',
-        });
-        const parentExtKey = cfdjs.CreateExtkeyFromSeed({
-          seed: seed.seed,
-          network: mainchainNwType,
-          extkeyType: 'extPrivkey',
-        });
-        const extkey = cfdjs.CreateExtkeyFromParentPath({
-          extkey: parentExtKey.extkey,
-          network: mainchainNwType,
-          extkeyType: 'extPrivkey',
-          path: '44h/0h/0h/0/0',
-        });
-        const privkeyRet = cfdjs.GetPrivkeyFromExtkey({
-          extkey: extkey.extkey,
-          network: mainchainNwType,
-          wif: false,
-          isCompressed: true,
-        });
-        const pubkeyRet = cfdjs.GetPubkeyFromExtkey({
-          extkey: extkey.extkey,
-          network: mainchainNwType,
-        });
-        pubkey3 = pubkeyRet.pubkey;
-        privkey3Hex = privkeyRet.privkey;
-      }
-
-      address = cfdjs.CreateAddress({
-        'keyData': {
-          'hex': pubkey3,
-          'type': 'pubkey',
-        },
-        'network': networkType,
-        'isElements': true,
-        'hashType': hashType,
-      });
-      address4 = cfdjs.CreateAddress({
-        'keyData': {
-          'hex': testPubkey4,
-          'type': 'pubkey',
-        },
-        'network': networkType,
-        'isElements': true,
-        'hashType': hashType,
-      });
-
-      descriptor = `wpkh(${pubkey3})`;
-      descriptor4 = `wpkh(${testPubkey4})`;
-      if (hashType === 'p2sh-p2wpkh') {
-        descriptor = `sh(${descriptor})`;
-        descriptor4 = `sh(${descriptor4})`;
+  interface PubkeySet {
+    bip32Path: string;
+    pubkey: string;
+  }
+  interface PathData {
+    bip32Path: string;
+    pubkey: string;
+    pubkeyList: PubkeySet[];
+    address: string;
+    descriptor: string;
+    confidentialAddress: string;
+    blindingKeyPair: KeyPair;
+    issuanceData: cfdjs.IssuanceDataResponse[];
+    vout: number;
+    amount: bigint;
+    valueCommitment: string;
+    abf: string;
+    vbf: string;
+  };
+  const pathList: PathData[] = [];
+  const dummyPathList: PathData[] = [];
+  const reissuePathList: PathData[] = [];
+  const reissueTokenPathList: PathData[] = [];
+  const issuePathList: PathData[] = [];
+  const issueTokenPathList: PathData[] = [];
+  if (tx2InputCount < setIssueTx) {
+    tx2InputCount = setIssueTx;
+  }
+  const maxPathCnt = tx2InputCount + setReissueTx * 3 + setIssueTx * 2;
+  for (let i = 0; i < maxPathCnt; ++i) {
+    const childPath = parentPath + '/' + i;
+    const blindingKeyPair = getKeyPairFromParent(childPath + '/0/0');
+    const pathData = {
+      bip32Path: childPath,
+      pubkey: '',
+      pubkeyList: [],
+      address: '',
+      confidentialAddress: '',
+      descriptor: '',
+      blindingKeyPair: blindingKeyPair,
+      issuanceData: [],
+      vout: -1,
+      amount: 0n,
+      valueCommitment: '',
+      abf: '',
+      vbf: '',
+    };
+    if (i < tx2InputCount) {
+      pathList.push(pathData);
+    } else if ((setReissueTx > 0) && i < tx2InputCount + setReissueTx) {
+      dummyPathList.push(pathData);
+    } else if ((setReissueTx > 0) && i < tx2InputCount + (setReissueTx * 2)) {
+      reissuePathList.push(pathData);
+    } else if ((setReissueTx > 0) && i < tx2InputCount + (setReissueTx * 3)) {
+      reissueTokenPathList.push(pathData);
+    } else {
+      if (issuePathList.length < setIssueTx) {
+        issuePathList.push(pathData);
+      } else {
+        issueTokenPathList.push(pathData);
       }
     }
-  } else if ((hashType === 'p2sh-p2wsh') || (hashType === 'p2wsh')) {
-    isScriptHash = true;
-    const requireNum = 2;
+  }
 
-    const multisigAddr = cfdjs.CreateMultisig({
-      nrequired: requireNum,
-      keys: [
-        pubkey3,
-        pubkey2,
-      ],
-      network: networkType,
-      hashType: hashType,
-      isElements: true,
-    });
-
-    redeemScript = multisigAddr.witnessScript;
-    descriptor = `wsh(multi(${requireNum},${pubkey3},${pubkey2}))`;
-    if (hashType === 'p2sh-p2wsh') {
-      address = {
-        address: multisigAddr.address,
-      };
-      descriptor = `sh(${descriptor})`;
-    } else if (hashType === 'p2wsh') {
-      address = {
-        address: multisigAddr.address,
-      };
+  const allList = [pathList, dummyPathList, reissuePathList,
+    reissueTokenPathList, issuePathList, issueTokenPathList];
+  for (const list of allList) {
+    for (const data of list) {
+      if (getLedgerPath) {
+        const pubkey = await liquidLib.getWalletPublicKey(data.bip32Path);
+        data.pubkey = pubkey.publicKey;
+        if (hashType.indexOf('p2wsh') >= 0) {
+          const pubkey1 = await liquidLib.getWalletPublicKey(data.bip32Path + '/0');
+          const pubkey2 = await liquidLib.getWalletPublicKey(data.bip32Path + '/1');
+          const pubkey3 = await liquidLib.getWalletPublicKey(data.bip32Path + '/2');
+          data.pubkeyList.push({
+            bip32Path: data.bip32Path + '/0',
+            pubkey: pubkey1.publicKey,
+          });
+          data.pubkeyList.push({
+            bip32Path: data.bip32Path + '/1',
+            pubkey: pubkey2.publicKey,
+          });
+          data.pubkeyList.push({
+            bip32Path: data.bip32Path + '/2',
+            pubkey: pubkey3.publicKey,
+          });
+        }
+      } else {
+        data.pubkey = getPubkeyFromParent(data.bip32Path);
+        if (hashType.indexOf('p2wsh') >= 0) {
+          data.pubkeyList.push({
+            bip32Path: data.bip32Path + '/0',
+            pubkey: getPubkeyFromParent(data.bip32Path + '/0'),
+          });
+          data.pubkeyList.push({
+            bip32Path: data.bip32Path + '/1',
+            pubkey: getPubkeyFromParent(data.bip32Path + '/1'),
+          });
+          data.pubkeyList.push({
+            bip32Path: data.bip32Path + '/2',
+            pubkey: getPubkeyFromParent(data.bip32Path + '/2'),
+          });
+        }
+      }
+      if (hashType.indexOf('p2wsh') >= 0) {
+        const addr = cfdjs.CreateMultisig({
+          isElements: true,
+          hashType: hashType,
+          network: networkType,
+          nrequired: 2,
+          keys: [
+            data.pubkeyList[0].pubkey,
+            data.pubkeyList[1].pubkey,
+            data.pubkeyList[2].pubkey,
+          ],
+        });
+        data.address = addr.address;
+        data.descriptor = 'wsh(multi(2,' + data.pubkeyList[0].pubkey +
+            ',' + data.pubkeyList[1].pubkey + ',' +
+            data.pubkeyList[2].pubkey + '))';
+        if (hashType === 'p2sh-p2wsh') {
+          data.descriptor = `sh(${data.descriptor})`;
+        }
+      } else {
+        const addr = cfdjs.CreateAddress({
+          isElements: true,
+          hashType: hashType,
+          network: networkType,
+          keyData: {
+            hex: data.pubkey,
+            type: 'pubkey',
+          },
+        });
+        data.address = addr.address;
+        data.descriptor = `wpkh(${data.pubkey})`;
+        if (hashType === 'p2sh-p2wpkh') {
+          data.descriptor = `sh(${data.descriptor})`;
+        }
+      }
+      const ctAddr = cfdjs.GetConfidentialAddress({
+        unblindedAddress: data.address,
+        key: data.blindingKeyPair.pubkey,
+      });
+      data.confidentialAddress = ctAddr.confidentialAddress;
+      console.log(`addr(${data.bip32Path}) =`, data.address);
     }
-    console.log('multisigAddr => ', address);
   }
-  if (!address) {
-    throw new Error('address undefined');
-  }
-  console.log('descriptor => ', descriptor);
-  const blindingKey = '2769451f3a1738d236a9cf747a3f1d427088b7ad20d01eb76c89f6105ffe88f6';
-  const confidentialKey = '036390faa240c5a82e3bad4c6f07836573dfffb9238d010a90eb4ceef0946d40ea';
-  const ctAddr = cfdjs.GetConfidentialAddress({
-    unblindedAddress: address.address,
-    key: confidentialKey,
-  });
-  console.log('ctAddr => ', ctAddr);
 
-  // const blindingKey1 = '0e8ef84e19065269a8ebd92232cab53f21b0f0d31c42d824a5a9aa9c528e9597';
-  const confidentialKey1 = '03fd456b187343c9ff4e18ab9d88980b36c0b1a64e862433cfd811b22e855760a4';
-  const ctAddr1 = cfdjs.GetConfidentialAddress({
-    unblindedAddress: address1.address,
-    key: confidentialKey1,
-  });
-  console.log('ctAddr1 => ', ctAddr1);
-
-  // const blindingKey2 = 'ff95155b8f7d9b8b7ba35d9a5237fe75bb62ba82996c69d493a70105f7f74e0d';
-  const confidentialKey2 = '0269d5b8d1c53d4d42ec80b9f787c39324a5d0572182724b4e61e34380ca23ce15';
-  const ctAddr2 = cfdjs.GetConfidentialAddress({
-    unblindedAddress: address2.address,
-    key: confidentialKey2,
-  });
-  console.log('ctAddr2 => ', ctAddr2);
-
-  const blindingKey4 = 'b91d9b51d4949b896e8dd911285f3d79a84d2ee1a5230014af3232bfef746721';
-  const confidentialKey4 = '036e77ff8109027c246125babd5d0852809367ea3d68704f6d8c855986d8521661';
-  const ctAddr4 = cfdjs.GetConfidentialAddress({
-    unblindedAddress: address4.address,
-    key: confidentialKey4,
-  });
-  console.log('ctAddr4 => ', ctAddr4);
-  const blindingKey11 = '2d3bca15285584902e747d5570321eabe6acac7dadbc3a9093f5f8846bffee80';
-  const confidentialKey11 = '038986c47b9d7ca1958b787e7d7299fa138499b8f191c81c0f2fc7e20211ec9b10';
-  const ctAddr11 = cfdjs.GetConfidentialAddress({
-    unblindedAddress: addr11.address,
-    key: confidentialKey11,
-  });
-  console.log('ctAddr11 => ', ctAddr11);
-  const blindingKey12 = '2641efcad9b6de678b5106e2fd2a93b34fd769b787e0bdb0f8f8ec13f7cc65c7';
-  const confidentialKey12 = '02bdc76f7362d990c61a5ff9a339d1be69e84154b4a604339b425e36c5df394069';
-  const ctAddr12 = cfdjs.GetConfidentialAddress({
-    unblindedAddress: addr12.address,
-    key: confidentialKey12,
-  });
-  console.log('ctAddr12 => ', ctAddr12);
-
-  const inputAmount = 5050000n;
+  const tx1InputCount = 1 + setReissueTx;
+  const dummyTxid1 = '7461b02405414d79e79a5050684a333c922c1136f4bdff5fb94b551394edebbd';
+  const empty256 = '0000000000000000000000000000000000000000000000000000000000000000';
+  const inputAmount = 5000000n;
   const inputAmount2 = 5000000n;
   const tx1Data = {
     version: 2,
     locktime: 0,
     txins: [{
-      txid: '7461b02405414d79e79a5050684a333c922c1136f4bdff5fb94b551394edebbd', // dummy
+      txid: dummyTxid1,
       vout: 0,
       sequence: 4294967295,
     }],
     txouts: [{
-      address: address.address,
-      amount: 5000000n,
+      address: pathList[0].address,
+      amount: inputAmount,
       asset: asset1,
     }],
     fee: {
@@ -756,42 +805,70 @@ async function example() {
       asset: asset1,
     },
   };
-  if (!setReissueTx) {
-    tx1Data.txouts.push({
-      address: address4.address,
-      amount: inputAmount2,
-      asset: asset1,
-    });
+  if (tx1InputCount > 1) {
+    for (let i = 1; i < tx1InputCount; ++i) {
+      tx1Data.txins.push({
+        txid: dummyTxid1,
+        vout: i,
+        sequence: 4294967295,
+      });
+    }
   }
-  let tx1 = cfdjs.ElementsCreateRawTransaction(tx1Data);
-  let issueData: cfdjs.IssuanceDataResponse = {
-    txid: '',
-    vout: 0,
-    asset: '',
-    entropy: '',
-    token: '',
-  };
-  let issueToken = '';
-  if (setReissueTx) {
-    const issueRet = cfdjs.SetRawIssueAsset({
-      tx: tx1.hex,
-      issuances: [{
-        txid: tx1Data.txins[0].txid,
-        vout: tx1Data.txins[0].vout,
-        assetAmount: inputAmount2,
-        assetAddress: ctAddr11.confidentialAddress,
-        tokenAmount: inputAmount2,
-        tokenAddress: ctAddr4.confidentialAddress,
-        contractHash: '0000000000000000000000000000000000000000000000000000000000000000',
-        isRemoveNonce: false,
-        isBlind: true,
-      }],
-      isRandomSortTxOut: false,
-    });
-    issueData = issueRet.issuances[0];
-    tx1 = issueRet;
-    if (issueData.token) {
-      issueToken = issueData.token;
+  if (pathList.length > 1) {
+    for (let i = 1; i < pathList.length; ++i) {
+      const pathData = pathList[i];
+      tx1Data.txouts.push({
+        address: pathData.address,
+        amount: inputAmount2,
+        asset: asset1,
+      });
+    }
+    if (dummyPathList.length > 0) {
+      for (let i = 1; i < dummyPathList.length; ++i) {
+        const pathData = dummyPathList[i];
+        tx1Data.txouts.push({
+          address: pathData.address,
+          amount: inputAmount2,
+          asset: asset1,
+        });
+      }
+    }
+  }
+  let tx1;
+  try {
+    tx1 = cfdjs.ElementsCreateRawTransaction(tx1Data);
+  } catch (e) {
+    console.log(tx1Data);
+    throw e;
+  }
+
+  if (setReissueTx > 0) {
+    for (let i = 0; i < reissuePathList.length; ++i) {
+      const pathData = reissuePathList[i];
+      const tokenPathData = reissueTokenPathList[i];
+      const issueRet = cfdjs.SetRawIssueAsset({
+        tx: tx1.hex,
+        issuances: [{
+          txid: tx1Data.txins[i + 1].txid,
+          vout: tx1Data.txins[i + 1].vout,
+          assetAmount: inputAmount2,
+          assetAddress: pathData.confidentialAddress,
+          tokenAmount: inputAmount2,
+          tokenAddress: tokenPathData.confidentialAddress,
+          contractHash: empty256,
+          isRemoveNonce: false,
+          isBlind: true,
+        }],
+        isRandomSortTxOut: false,
+      });
+      tokenPathData.issuanceData.push({
+        txid: issueRet.issuances[0].txid,
+        vout: issueRet.issuances[0].vout,
+        asset: issueRet.issuances[0].asset,
+        entropy: issueRet.issuances[0].entropy,
+        token: issueRet.issuances[0].token,
+      });
+      tx1.hex = issueRet.hex;
     }
     // console.log('issueTx =', tx1.hex);
   }
@@ -805,23 +882,54 @@ async function example() {
         txid: tx1Data.txins[0].txid,
         vout: tx1Data.txins[0].vout,
         asset: asset1,
-        blindFactor: '0000000000000000000000000000000000000000000000000000000000000000',
-        assetBlindFactor: '0000000000000000000000000000000000000000000000000000000000000000',
+        blindFactor: empty256,
+        assetBlindFactor: empty256,
         amount: inputAmount,
       }],
-      txoutConfidentialAddresses: [
-        ctAddr.confidentialAddress,
-        ctAddr4.confidentialAddress,
-      ],
+      txoutConfidentialAddresses: [],
       issuances: [],
     };
-    if (setReissueTx && blind1Data.issuances) {
-      blind1Data.issuances.push({
-        txid: tx1Data.txins[0].txid,
-        vout: tx1Data.txins[0].vout,
-        assetBlindingKey: blindingKey11,
-        tokenBlindingKey: blindingKey4,
-      });
+    if (setReissueTx > 0 && blind1Data.txins && blind1Data.issuances) {
+      for (let i = 0; i < reissuePathList.length; ++i) {
+        const pathData = reissuePathList[i];
+        const tokenPathData = reissueTokenPathList[i];
+        blind1Data.txins.push({
+          txid: dummyTxid1,
+          vout: i + 1,
+          asset: asset1,
+          blindFactor: empty256,
+          assetBlindFactor: empty256,
+          amount: inputAmount,
+        });
+        blind1Data.issuances.push({
+          txid: dummyTxid1,
+          vout: i + 1,
+          assetBlindingKey: pathData.blindingKeyPair.privkey,
+          tokenBlindingKey: tokenPathData.blindingKeyPair.privkey,
+        });
+      }
+    }
+    if (blind1Data.txoutConfidentialAddresses) {
+      for (let i = 0; i < pathList.length; ++i) {
+        const pathData = pathList[i];
+        blind1Data.txoutConfidentialAddresses.push(
+            pathData.confidentialAddress);
+      }
+      for (let i = 0; i < dummyPathList.length; ++i) {
+        const pathData = dummyPathList[i];
+        blind1Data.txoutConfidentialAddresses.push(
+            pathData.confidentialAddress);
+      }
+      for (let i = 0; i < reissuePathList.length; ++i) {
+        const issuePathData = reissuePathList[i];
+        blind1Data.txoutConfidentialAddresses.push(
+            issuePathData.confidentialAddress);
+      }
+      for (let i = 0; i < reissueTokenPathList.length; ++i) {
+        const tokenPathData = reissueTokenPathList[i];
+        blind1Data.txoutConfidentialAddresses.push(
+            tokenPathData.confidentialAddress);
+      }
     }
     tx1 = cfdjs.BlindRawTransaction(blind1Data);
   }
@@ -833,184 +941,312 @@ async function example() {
     mainchainNetwork: mainchainNwType});
   console.log('*** blind dectx1 ***\n', JSON.stringify(dectx1, null, '  '));
 
-  let valueCommitment = '';
-  let valueCommitment2 = '';
-  let input2Vout = 1;
+  // set utxo data
   if (dectx1.vout) {
-    valueCommitment = (!dectx1.vout[0].valuecommitment) ?
-      '' : dectx1.vout[0].valuecommitment;
-    valueCommitment2 = (!dectx1.vout[1].valuecommitment) ?
-      '' : dectx1.vout[1].valuecommitment;
-    if (setReissueTx) {
-      valueCommitment2 = (!dectx1.vout[3].valuecommitment) ?
-      '' : dectx1.vout[3].valuecommitment;
-      input2Vout = 3;
+    const unblindTxoutList: cfdjs.UnblindTxOut[] = [];
+    const utxoPathList = [pathList, reissueTokenPathList];
+    for (const txout of dectx1.vout) {
+      const addr = (txout.scriptPubKey && txout.scriptPubKey.addresses) ?
+          txout.scriptPubKey.addresses[0] : '';
+      if (!addr) continue;
+      for (const list of utxoPathList) {
+        let isFind = false;
+        for (const pathData of list) {
+          if (pathData.address === addr) {
+            pathData.vout = txout.n;
+            if (txout.valuecommitment) {
+              pathData.valueCommitment = txout.valuecommitment;
+            }
+            pathData.amount = inputAmount;
+            unblindTxoutList.push({
+              index: txout.n,
+              blindingKey: pathData.blindingKeyPair.privkey,
+            });
+            isFind = true;
+            break;
+          }
+        }
+        if (isFind) break;
+      }
+    }
+    const unblindData = cfdjs.UnblindRawTransaction({
+      tx: tx1.hex,
+      txouts: unblindTxoutList,
+    });
+    if (unblindData.outputs) {
+      for (const data of unblindData.outputs) {
+        for (const list of utxoPathList) {
+          let isFind = false;
+          for (const pathData of list) {
+            if (pathData.vout === data.index) {
+              pathData.abf = data.assetBlindFactor;
+              pathData.vbf = data.blindFactor;
+              isFind = true;
+              break;
+            }
+          }
+          if (isFind) break;
+        }
+      }
     }
   }
-  const utxo = {
-    txid: dectx1.txid,
-    vout: (!dectx1.vout) ? 0 : dectx1.vout[0].n,
-    amount: tx1Data.txouts[0].amount,
-    value: valueCommitment,
-    descriptor: descriptor,
-  };
-  const utxo2 = {
-    txid: dectx1.txid,
-    vout: (!dectx1.vout) ? 0 : dectx1.vout[input2Vout].n,
-    amount: inputAmount2,
-    value: valueCommitment2,
-    descriptor: descriptor4,
-  };
 
-  let outAmount1 = 4000000n;
-  let outAmount2 = 950000n;
-  if (tx2InputCount === 2) {
-    outAmount1 = 9000000n;
-  }
-  if (setReissueTx) {
-    outAmount1 = inputAmount - 50000n;
-    outAmount2 = inputAmount2;
-  }
   const tx2Data = {
     version: 2,
     locktime: 0,
     txins: [{
-      txid: utxo.txid,
-      vout: utxo.vout,
-      sequence: 4294967295,
+      txid: dectx1.txid,
+      vout: pathList[0].vout,
+      sequence: 0xffffffff,
     }],
     txouts: [{
-      address: address1.address,
-      amount: outAmount1,
+      address: pathList[0].address,
+      amount: pathList[0].amount,
       asset: asset1,
-    }, {
-      address: address2.address,
-      amount: outAmount2,
-      asset: (setReissueTx) ? issueToken : asset1,
     }],
     fee: {
       amount: 50000n,
       asset: asset1,
     },
   };
-  if (tx2InputCount === 2) {
-    tx2Data.txins.push({
-      txid: utxo2.txid,
-      vout: utxo2.vout,
-      sequence: 4294967295,
+  const blindReqData: cfdjs.BlindRawTransactionRequest = {
+    tx: '',
+    txins: [{
+      txid: dectx1.txid,
+      vout: pathList[0].vout,
+      amount: pathList[0].amount,
+      asset: asset1,
+      assetBlindFactor: pathList[0].abf,
+      blindFactor: pathList[0].vbf,
+    }],
+    txoutConfidentialAddresses: [pathList[0].confidentialAddress],
+    issuances: [],
+  };
+  let totalAsset = 0n;
+  let startOffset = 1;
+  if ((setReissuanceToTop > setIssuanceToTop) &&
+      (reissuePathList.length > 0)) {
+    startOffset = 0;
+    tx2Data.txins = [];
+    blindReqData.txins = [];
+    for (let i = 0; i < reissueTokenPathList.length; ++i) {
+      const pathData = reissueTokenPathList[i];
+      tx2Data.txins.push({
+        txid: dectx1.txid,
+        vout: pathData.vout,
+        sequence: 0xffffffff,
+      });
+      totalAsset += pathData.amount;
+      if (blindReqData.txins) {
+        const asset =
+          (pathData.issuanceData && pathData.issuanceData[0]) ?
+            pathData.issuanceData[0].token : asset1;
+        blindReqData.txins.push({
+          txid: dectx1.txid,
+          vout: pathData.vout,
+          amount: pathData.amount,
+          asset: (asset) ? asset : asset1,
+          assetBlindFactor: pathData.abf,
+          blindFactor: pathData.vbf,
+        });
+      }
+    }
+  }
+  if (pathList.length > 0 && tx2Data.txins) {
+    for (let i = startOffset; i < pathList.length; ++i) {
+      const pathData = pathList[i];
+      tx2Data.txins.push({
+        txid: dectx1.txid,
+        vout: pathData.vout,
+        sequence: 0xffffffff,
+      });
+      totalAsset += pathData.amount;
+      if (blindReqData.txins) {
+        const asset =
+          (pathData.issuanceData && pathData.issuanceData[0]) ?
+            pathData.issuanceData[0].token : asset1;
+        blindReqData.txins.push({
+          txid: dectx1.txid,
+          vout: pathData.vout,
+          amount: pathData.amount,
+          asset: (asset) ? asset : asset1,
+          assetBlindFactor: pathData.abf,
+          blindFactor: pathData.vbf,
+        });
+      }
+    }
+    if ((setReissuanceToTop <= setIssuanceToTop)) {
+      for (let i = 0; i < reissueTokenPathList.length; ++i) {
+        const pathData = reissueTokenPathList[i];
+        tx2Data.txins.push({
+          txid: dectx1.txid,
+          vout: pathData.vout,
+          sequence: 0xffffffff,
+        });
+        totalAsset += pathData.amount;
+        if (blindReqData.txins) {
+          const asset =
+            (pathData.issuanceData && pathData.issuanceData[0]) ?
+              pathData.issuanceData[0].token : asset1;
+          blindReqData.txins.push({
+            txid: dectx1.txid,
+            vout: pathData.vout,
+            amount: pathData.amount,
+            asset: (asset) ? asset : asset1,
+            assetBlindFactor: pathData.abf,
+            blindFactor: pathData.vbf,
+          });
+        }
+      }
+    }
+  }
+  if (pathList.length > 0 && tx2Data.txouts) {
+    tx2Data.txouts.push({
+      address: pathList[1].address,
+      amount: totalAsset - tx2Data.fee.amount,
+      asset: asset1,
     });
+    if (blindReqData.txoutConfidentialAddresses) {
+      blindReqData.txoutConfidentialAddresses.push(
+          pathList[1].confidentialAddress);
+    }
+  }
+  if (reissueTokenPathList.length > 0 && tx2Data.txouts) {
+    for (let i = 0; i < reissueTokenPathList.length; ++i) {
+      if (reissueTokenPathList[i].issuanceData.length > 0 &&
+        reissueTokenPathList[i].issuanceData[0]) {
+        const token = reissueTokenPathList[i].issuanceData[0].token;
+        tx2Data.txouts.push({
+          address: reissueTokenPathList[i].address,
+          amount: reissueTokenPathList[i].amount,
+          asset: (token) ? token : '',
+        });
+        if (blindReqData.txoutConfidentialAddresses) {
+          blindReqData.txoutConfidentialAddresses.push(
+              reissueTokenPathList[i].confidentialAddress);
+        }
+      }
+    }
   }
   const tx2 = cfdjs.ElementsCreateRawTransaction(tx2Data);
 
   let blindTx2 = tx2;
+  const issueList = [];
   if (setIssueTx) {
-    const issueRet = cfdjs.SetRawIssueAsset({
-      tx: tx2.hex,
-      issuances: [{
-        txid: tx2Data.txins[0].txid,
-        vout: tx2Data.txins[0].vout,
+    let cnt = 0;
+    const startIdx = (!setIssuanceToTop) ?
+        pathList.length - issuePathList.length : 0;
+    const maxIndex = (!setIssuanceToTop) ?
+        pathList.length : issuePathList.length;
+    for (let i = startIdx; i < maxIndex; ++i) {
+      const pathData = issuePathList[cnt];
+      const tokenData = issueTokenPathList[cnt];
+      issueList.push({
+        txid: dectx1.txid,
+        vout: pathList[i].vout,
         assetAmount: inputAmount2,
-        assetAddress: ctAddr11.confidentialAddress,
+        assetAddress: pathData.confidentialAddress,
         tokenAmount: inputAmount2,
-        tokenAddress: ctAddr12.confidentialAddress,
-        contractHash: '0000000000000000000000000000000000000000000000000000000000000000',
+        tokenAddress: tokenData.confidentialAddress,
+        contractHash: empty256,
         isBlind: true,
-      }],
-      isRandomSortTxOut: false,
-    });
-    blindTx2 = issueRet;
+      });
+      pathData.issuanceData.push({
+        txid: dectx1.txid,
+        vout: pathList[i].vout,
+        asset: '',
+        entropy: '',
+        token: '',
+      });
+      if (blindReqData.issuances) {
+        blindReqData.issuances.push({
+          txid: dectx1.txid,
+          vout: pathList[i].vout,
+          assetBlindingKey: pathData.blindingKeyPair.privkey,
+          tokenBlindingKey: tokenData.blindingKeyPair.privkey,
+        });
+      }
+      if (blindReqData.txoutConfidentialAddresses) {
+        blindReqData.txoutConfidentialAddresses.push(
+            pathData.confidentialAddress);
+        blindReqData.txoutConfidentialAddresses.push(
+            tokenData.confidentialAddress);
+      }
+      ++cnt;
+    }
+    try {
+      const issueRet = cfdjs.SetRawIssueAsset({
+        tx: blindTx2.hex,
+        issuances: issueList,
+        isRandomSortTxOut: false,
+      });
+      blindTx2 = issueRet;
+      if (issueRet.issuances) {
+        for (const issueData of issueRet.issuances) {
+          for (const pathData of issuePathList) {
+            if (pathData.issuanceData &&
+              (pathData.issuanceData[0].txid === issueData.txid) &&
+              (pathData.issuanceData[0].vout === issueData.vout)) {
+              pathData.issuanceData[0].asset = issueData.asset;
+              pathData.issuanceData[0].token = issueData.token;
+              pathData.issuanceData[0].entropy = issueData.entropy;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.log(issueList);
+      throw e;
+    }
   }
   console.log('*** tx2 ***\n', tx2);
 
   if (blindOpt.blind2) {
-    const unblindTxOut = [{
-      asset: tx1Data.txouts[0].asset,
-      blindFactor: '0000000000000000000000000000000000000000000000000000000000000000',
-      assetBlindFactor: '0000000000000000000000000000000000000000000000000000000000000000',
-      amount: tx1Data.txouts[0].amount,
-    }, {
-      asset: (setReissueTx) ? issueToken : asset1,
-      blindFactor: '0000000000000000000000000000000000000000000000000000000000000000',
-      assetBlindFactor: '0000000000000000000000000000000000000000000000000000000000000000',
-      amount: inputAmount2,
-    }];
-    if (blindOpt.blind1) {
-      const unblindData = cfdjs.UnblindRawTransaction({
-        tx: tx1.hex,
-        txouts: [{
-          index: 0,
-          blindingKey: blindingKey,
-        }, {
-          index: (setReissueTx) ? 3 : 1,
-          blindingKey: blindingKey4,
-        }],
-      });
-      if (unblindData.outputs) {
-        unblindTxOut[0] = unblindData.outputs[0];
-        console.log('unblind1 =', unblindTxOut[0]);
-        unblindTxOut[1] = unblindData.outputs[1];
-        console.log('unblind2 =', unblindTxOut[1]);
+    if (reissueTokenPathList.length > 0 && tx2Data.txouts) {
+      const issuanceList: cfdjs.ReissuanceDataRequest[] = [];
+      for (let i = 0; i < reissueTokenPathList.length; ++i) {
+        if (reissueTokenPathList[i].issuanceData.length > 0 &&
+          reissueTokenPathList[i].issuanceData[0]) {
+          issuanceList.push({
+            txid: dectx1.txid,
+            vout: reissueTokenPathList[i].vout,
+            amount: inputAmount2,
+            address: reissuePathList[i].confidentialAddress,
+            assetBlindingNonce: reissueTokenPathList[i].abf,
+            assetEntropy: reissueTokenPathList[i].issuanceData[0].entropy,
+          });
+          if (blindReqData.txins) {
+            const token = reissueTokenPathList[i].issuanceData[0].token;
+            blindReqData.txins.push({
+              txid: dectx1.txid,
+              vout: reissueTokenPathList[i].vout,
+              amount: inputAmount2,
+              asset: (token) ? token : '',
+              assetBlindFactor: reissueTokenPathList[i].abf,
+              blindFactor: reissueTokenPathList[i].vbf,
+            });
+          }
+        }
       }
-    }
-    if (setReissueTx) {
-      const reissueRet = cfdjs.SetRawReissueAsset({
-        tx: blindTx2.hex,
-        issuances: [{
-          txid: tx2Data.txins[1].txid,
-          vout: tx2Data.txins[1].vout,
-          amount: inputAmount2,
-          address: ctAddr11.confidentialAddress,
-          assetBlindingNonce: unblindTxOut[1].assetBlindFactor,
-          assetEntropy: issueData.entropy,
-        }],
-        isRandomSortTxOut: false,
-      });
-      blindTx2 = reissueRet;
+      try {
+        const reissueRet = cfdjs.SetRawReissueAsset({
+          tx: blindTx2.hex,
+          issuances: issuanceList,
+          isRandomSortTxOut: false,
+        });
+        blindTx2 = reissueRet;
+      } catch (e) {
+        console.log(issuanceList);
+        throw e;
+      }
     }
     console.log('*** before blind tx2 ***\n', blindTx2);
 
-    const blindReqData: cfdjs.BlindRawTransactionRequest = {
-      tx: blindTx2.hex,
-      txins: [{
-        txid: tx2Data.txins[0].txid,
-        vout: tx2Data.txins[0].vout,
-        asset: unblindTxOut[0].asset,
-        blindFactor: unblindTxOut[0].blindFactor,
-        assetBlindFactor: unblindTxOut[0].assetBlindFactor,
-        amount: unblindTxOut[0].amount,
-      }],
-      txoutConfidentialAddresses: [
-        ctAddr1.confidentialAddress,
-        ctAddr2.confidentialAddress,
-      ],
-      issuances: [],
-    };
-    if ((tx2InputCount === 2) && (blindReqData.txins)) {
-      blindReqData.txins.push({
-        txid: tx2Data.txins[1].txid,
-        vout: tx2Data.txins[1].vout,
-        asset: unblindTxOut[1].asset,
-        blindFactor: unblindTxOut[1].blindFactor,
-        assetBlindFactor: unblindTxOut[1].assetBlindFactor,
-        amount: unblindTxOut[1].amount,
-      });
-    }
-    if (setIssueTx && blindReqData.issuances) {
-      blindReqData.issuances.push({
-        txid: tx2Data.txins[0].txid,
-        vout: tx2Data.txins[0].vout,
-        assetBlindingKey: blindingKey11,
-        tokenBlindingKey: blindingKey12,
-      });
-    } else if (setReissueTx && blindReqData.issuances) {
-      blindReqData.issuances.push({
-        txid: tx2Data.txins[1].txid,
-        vout: tx2Data.txins[1].vout,
-        assetBlindingKey: blindingKey11,
-        tokenBlindingKey: blindingKey11,
-      });
-    }
+    blindReqData.tx = blindTx2.hex;
     blindTx2 = cfdjs.BlindRawTransaction(blindReqData);
+  }
+  if (signedTest) {
+    console.log('*** blind rawtx2 ***\n', blindTx2.hex);
   }
 
   // console.log('*** Blind ***\n', tx2);
@@ -1019,125 +1255,80 @@ async function example() {
     mainchainNetwork: mainchainNwType});
   console.log('*** blind dectx2 ***\n', JSON.stringify(dectx2, null, '  '));
 
-  if (signedTest) {
-    console.log('*** before sign rawtx ***\n', blindTx2.hex);
-    const signed = cfdjs.SignWithPrivkey({
-      isElements: true,
-      tx: blindTx2.hex,
-      txin: {
-        txid: utxo2.txid,
-        vout: utxo2.vout,
-        privkey: testPrivkey4,
-        hashType: hashType,
-        amount: utxo2.amount,
-        confidentialValueCommitment: utxo2.value,
-      },
-    });
-    blindTx2 = signed;
-    if (signedAddTest) {
-      blindTx2 = cfdjs.SignWithPrivkey({
-        isElements: true,
-        tx: blindTx2.hex,
-        txin: {
-          txid: utxo.txid,
-          vout: utxo.vout,
-          privkey: privkey3Hex,
-          pubkey: pubkey3,
-          hashType: hashType,
-          amount: utxo.amount,
-          confidentialValueCommitment: utxo.value,
-        },
-      });
-    }
-    console.log('\n===== VerifySign =====');
-    const reqVerifyJson = {
-      tx: blindTx2.hex,
-      isElements: true,
-      txins: [{
-        txid: utxo2.txid,
-        vout: utxo2.vout,
-        address: address4.address,
-        amount: utxo2.amount,
-        descriptor: descriptor4,
-        confidentialValueCommitment: utxo2.value,
-      }],
-    };
-    if (signedAddTest) {
-      reqVerifyJson.txins.push({
-        txid: utxo.txid,
-        vout: utxo.vout,
-        address: address.address,
-        amount: utxo.amount,
-        descriptor: descriptor,
-        confidentialValueCommitment: utxo.value,
-      });
-    }
-    const verifyRet = cfdjs.VerifySign(reqVerifyJson);
-    console.log('\n*** VerifySign ***\n', JSON.stringify(verifyRet, null, '  '));
-    if (!verifyRet.success) {
-      const decSignedTx = cfdjs.ElementsDecodeRawTransaction({
-        hex: blindTx2.hex, network: networkType,
-        mainchainNetwork: mainchainNwType});
-      console.log('*** blind decSignedTx2 ***\n',
-          JSON.stringify(decSignedTx, null, '  '));
-      console.log('\n*** VerifySignRequest ***\n',
-          reqVerifyJson.txins);
-      console.log('\n*** VerifySign Failed. ***\n');
-    } else if (signedAddTest) {
-      console.log('\n*** Signed1 Tx ***\n', signed);
-      console.log('\n*** Signed2 Tx ***\n', blindTx2);
-    } else {
-      console.log('\n*** Signed Tx ***\n', blindTx2);
-    }
+  if (!dectx2.vin) {
     return;
-  } else {
-    let walletUtxoList = [{
-      bip32Path: PATH3,
-      txid: utxo.txid,
-      vout: utxo.vout,
-      amount: utxo.amount,
-      valueCommitment: utxo.value,
-      redeemScript: redeemScript,
-      descriptor: utxo.descriptor,
-    }];
-    if (!isScriptHash && (tx2InputCount === 2) && addSignAddr4) {
-      if (ignore1stCache) {
-        walletUtxoList = [];
+  }
+  const walletUtxoList: WalletUtxoData[] = [];
+  for (let i = 0; i < dectx2.vin.length; ++i) {
+    let isTarget = false;
+    for (const num of signTargetIndex) {
+      if (i === num) {
+        isTarget = true;
+        break;
       }
-      walletUtxoList.push({
-        bip32Path: PATH4,
-        txid: utxo2.txid,
-        vout: utxo2.vout,
-        amount: utxo2.amount,
-        valueCommitment: utxo2.value,
-        redeemScript: '',
-        descriptor: utxo2.descriptor,
-      });
     }
-    if (isScriptHash) {
-      walletUtxoList = [{
-        bip32Path: PATH3,
-        txid: utxo.txid,
-        vout: utxo.vout,
-        amount: utxo.amount,
-        valueCommitment: utxo.value,
-        redeemScript: redeemScript,
-        descriptor: utxo.descriptor,
-      }, {
-        bip32Path: PATH2,
-        txid: utxo.txid,
-        vout: utxo.vout,
-        amount: utxo.amount,
-        valueCommitment: utxo.value,
-        redeemScript: redeemScript,
-        descriptor: utxo.descriptor,
-      }];
+    if (isTarget) {
+      const txin = dectx2.vin[i];
+      let isFind = false;
+      const txid = dectx1.txid;
+      const utxoList = [pathList, reissueTokenPathList];
+      for (const list of utxoList) {
+        for (const data of list) {
+          if (data.vout == txin.vout) {
+            if (data.pubkeyList.length > 0) {
+              for (const pubkeyData of data.pubkeyList) {
+                walletUtxoList.push({
+                  bip32Path: pubkeyData.bip32Path,
+                  txid: txid,
+                  vout: txin.vout,
+                  amount: data.amount,
+                  valueCommitment: data.valueCommitment,
+                  redeemScript: '',
+                  descriptor: data.descriptor,
+                });
+              }
+            } else {
+              walletUtxoList.push({
+                bip32Path: data.bip32Path,
+                txid: txid,
+                vout: txin.vout,
+                amount: data.amount,
+                valueCommitment: data.valueCommitment,
+                redeemScript: '',
+                descriptor: data.descriptor,
+              });
+            }
+            isFind = true;
+            break;
+          }
+        }
+        if (isFind) continue;
+      }
     }
+  }
+
+  if (!walletUtxoList) {
+    console.log('*** Sign target not found. ***\n', signTargetIndex);
+    return;
+  }
+  if (!directMnemonic) {
     const txHex = await execSign(blindTx2.hex, walletUtxoList, '');
     console.log('*** signed tx hex ***\n', txHex);
-    if (mnemonic) {
-      const tx = await execSign(blindTx2.hex, walletUtxoList, mnemonic);
-      console.log('*** mnemonic signed tx ***\n', tx);
+    if (dumpTx) {
+      const decSignedTx = cfdjs.ElementsDecodeRawTransaction({
+        hex: txHex, network: networkType,
+        mainchainNetwork: mainchainNwType});
+      console.log('*** Signed Tx ***\n', JSON.stringify(decSignedTx, null, '  '));
+    }
+  }
+  if (mnemonic) {
+    const tx = await execSign(blindTx2.hex, walletUtxoList, mnemonic);
+    console.log('*** mnemonic signed tx ***\n', tx);
+    if (dumpTx) {
+      const decSignedTx = cfdjs.ElementsDecodeRawTransaction({
+        hex: tx, network: networkType,
+        mainchainNetwork: mainchainNwType});
+      console.log('*** Signed Tx ***\n', JSON.stringify(decSignedTx, null, '  '));
     }
   }
 };
@@ -1176,6 +1367,8 @@ async function execFixedTest() {
 
 if (fixedTest) {
   execFixedTest();
+} else if (connectionTest) {
+  execConnectionTest();
 } else if ((!signTarget) && (!txData)) {
   example();
 } else {
