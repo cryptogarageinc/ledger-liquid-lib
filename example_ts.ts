@@ -609,6 +609,9 @@ async function example() {
   const keyInfo = cfdjs.GetExtkeyInfo(extkey);
   console.log('childExtkeyInfo =', keyInfo);
 
+  const xpub = await liquidLib.getXpubKey('44\'/0\'/0\'');
+  console.log('getXpubKey =', xpub);
+
   let directMnemonic = false;
   if (mnemonic) {
     const mnemonicExtPubkey = getExtKeyFromParent(childPath);

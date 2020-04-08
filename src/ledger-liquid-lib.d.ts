@@ -37,6 +37,10 @@ export interface GetPublicKeyResponse extends ResponseInfo {
   chainCode: string;
 }
 
+export interface GetXpubKeyResponse extends ResponseInfo {
+  xpubKey: string;
+}
+
 export interface GetAddressResponse extends GetPublicKeyResponse {
   address: string;
 }
@@ -98,6 +102,14 @@ export class LedgerLiquidWrapper {
    * @returns GetPublicKeyResponse wrapped promise.
    */
   getWalletPublicKey(bip32Path: string): Promise<GetPublicKeyResponse>;
+
+  /**
+   * Get xpub key with ledger wallet.
+   *
+   * @param bip32Path bip32 path.
+   * @returns GetXpubKeyResponse wrapped promise.
+   */
+  getXpubKey(bip32Path: string): Promise<GetXpubKeyResponse>;
 
   /*
    * Get address with ledger wallet.

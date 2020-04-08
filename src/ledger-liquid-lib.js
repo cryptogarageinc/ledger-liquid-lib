@@ -60,7 +60,7 @@ function convertValueFromAmount(amount) {
   return value;
 }
 
-function parseBip32Path(path) {
+function parseBip32Path(path, parent = false) {
   if (path === '') {
     return Buffer.alloc(0);
   }
@@ -71,8 +71,10 @@ function parseBip32Path(path) {
   }
   const hardendedTargets = ['\'', 'h', 'H'];
 
-  const buf = Buffer.alloc(items.length * 4);
-  for (let idx = 0; idx < items.length; ++idx) {
+  const length = (parent) ? items.length - 1 : items.length;
+  const buf = Buffer.alloc(length * 4);
+  const array = [];
+  for (let idx = 0; idx < length; ++idx) {
     let isFind = false;
     for (let hIdx = 0; hIdx < hardendedTargets.length; ++hIdx) {
       const hKey = hardendedTargets[hIdx];
@@ -84,6 +86,7 @@ function parseBip32Path(path) {
         }
         // const value = 0x80000000 | num;
         const value = 2147483648 + num;
+        array.push(value);
         buf.writeUInt32BE(value, idx * 4);
         isFind = true;
         break;
@@ -92,20 +95,25 @@ function parseBip32Path(path) {
     if (!isFind) {
       const num = Number(items[idx]);
       if (num === Number.NaN) throw new Error(`Illegal path format. [${items[idx]}]`);
+      array.push(num);
       buf.writeUInt32BE(num, idx * 4);
     }
   }
   // console.log('bip32 path => ', buf);
-  return buf;
+  return {
+    buffer: buf,
+    array: array,
+  };
 }
 
 // GET WALLET PUBLIC KEY
-async function getWalletPublicKey(transport, path, option) {
+async function getWalletPublicKey(
+    transport, path, option, parent = false) {
   const CLA = 0xe0;
   const GET_WALLET_PUBLIC_KEY = 0x40;
   const p1 = 0;
 
-  const pathBuffer = parseBip32Path(path);
+  const pathBuffer = parseBip32Path(path, parent).buffer;
 
   const data = Buffer.concat([
     Buffer.from([pathBuffer.length / 4]),
@@ -398,7 +406,7 @@ async function liquidFinalizeInputFull(transport, dectx) {
 }
 
 async function untrustedHashSign(transport, dectx, path, pin, sigHashType) {
-  const pathBuffer = parseBip32Path(path);
+  const pathBuffer = parseBip32Path(path).buffer;
   const authorization = Buffer.from(pin, 'hex');
 
   const locktime = Buffer.alloc(4);
@@ -641,7 +649,8 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       // TODO(k-matsuzawa): notfound liquid option(0x10, 0x11)
       const p2 = 1; // = 0x10;
       // console.time('call getWalletPublicKey');
-      result = await getWalletPublicKey(this.transport, bip32Path, p2);
+      result = await getWalletPublicKey(
+          this.transport, bip32Path, p2);
       // console.timeEnd('call getWalletPublicKey');
       // console.log('getWalletPublicKey result =', result);
       ecode = result.errorCode;
@@ -654,6 +663,48 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       disconnect: connRet.disconnect,
       publicKey: (!result) ? '' : compressPubkey(result.pubkey),
       chainCode: (!result) ? '' : result.chainCode,
+    };
+  }
+
+  async getXpubKey(bip32Path) {
+    let xpub = undefined;
+    const connRet = await this.isConnected();
+    let ecode = connRet.errorCode;
+    let errMsg = connRet.errorMessage;
+    if (connRet.success) {
+      const p2 = 1; // = 0x10;
+      const parent = await getWalletPublicKey(
+          this.transport, bip32Path, p2, true);
+      ecode = parent.errorCode;
+      if (ecode !== 0x9000) {
+        errMsg = 'other error';
+      } else {
+        const pubkey = await getWalletPublicKey(
+            this.transport, bip32Path, p2);
+        ecode = parent.errorCode;
+        if (ecode !== 0x9000) {
+          errMsg = 'other error';
+        } else {
+          const pathArr = parseBip32Path(bip32Path).array;
+          const extkey = cfdjs.CreateExtkey({
+            network: this.mainchainNetwork,
+            extkeyType: 'extPubkey',
+            parentKey: compressPubkey(parent.pubkey),
+            key: compressPubkey(pubkey.pubkey),
+            chainCode: pubkey.chainCode,
+            depth: pathArr.length,
+            childNumber: pathArr[pathArr.length - 1],
+          });
+          xpub = extkey.extkey;
+        }
+      }
+    }
+    return {
+      success: (ecode === 0x9000),
+      errorCode: ecode,
+      errorMessage: errMsg,
+      disconnect: connRet.disconnect,
+      xpubKey: (!xpub) ? '' : xpub,
     };
   }
 
