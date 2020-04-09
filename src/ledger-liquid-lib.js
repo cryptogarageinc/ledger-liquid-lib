@@ -543,18 +543,43 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     this.networkType = networkType;
     this.mainchainNetwork = (networkType === 'regtest') ?
         'regtest' : 'mainnet';
+    this.waitForConnecting = false;
+  }
+
+  async getDeviceList() {
+    let devList = [];
+    let ecode = disconnectEcode;
+    let errMsg = 'other error';
+    try {
+      devList = await TransportNodeHid.list();
+      ecode = 0x9000;
+      errMsg = '';
+    } catch (e) {
+      console.log(e);
+    }
+    return {
+      success: (ecode === 0x9000),
+      errorCode: ecode,
+      errorMessage: errMsg,
+      disconnect: false,
+      deviceList: devList,
+    };
   }
 
   async connect(maxWaitTime = undefined, devicePath = undefined) {
     const sleep = (msec) => new Promise(
         (resolve) => setTimeout(resolve, msec));
 
+    if (this.transport) await this.transport.close();
+
+    this.waitForConnecting = true;
     const waitLimit = (typeof maxWaitTime === 'number') ? maxWaitTime : 0xffffffff;
     const path = (typeof devicePath === 'string') ? devicePath : '';
     let transport = undefined;
-    let count = 0;
+    let count = (waitLimit <= 0) ? 0 : 1;
     let ecode = disconnectEcode;
-    while (count < waitLimit) {
+    let errMsg = 'other error';
+    while ((count <= waitLimit) && this.waitForConnecting) {
       try {
         transport = await TransportNodeHid.open(path);
 
@@ -564,6 +589,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
           break;
         } else if (ecode !== disconnectEcode) {
           console.log('illegal error. ', ecode);
+          await transport.close();
           break;
         }
       } catch (e) {
@@ -573,27 +599,41 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
           // disconnect error
         } else if (errText.indexOf('TransportError: NoDevice') >= 0) {
           // device connect error
+        } else if (errText.indexOf('cannot open device with path') >= 0) {
+          // device connect error
         } else {
           console.log(`connection fail.(exception) count=${count}`, e);
+          ecode = 0x6000;
+          break;
         }
       }
+      if (transport) await transport.close();
+      transport = undefined;
       console.info(`connection fail. count=${count}`);
       ++count;
-      await sleep(1000);
+      if (count != waitLimit) await sleep(1000);
     }
 
-    let errMsg = 'other error';
     if (ecode === 0x9000) {
       errMsg = '';
     } else if (ecode === disconnectEcode) {
-      errMsg = 'connection fail.';
+      if (this.waitForConnecting) {
+        errMsg = 'connection fail.';
+      } else {
+        errMsg = 'connection cancel.';
+      }
     }
+    this.waitForConnecting = false;
     return {
       success: (ecode === 0x9000),
       errorCode: ecode,
       errorMessage: errMsg,
       disconnect: (ecode === disconnectEcode),
     };
+  }
+
+  cancelConnect() {
+    this.waitForConnecting = false;
   }
 
   async isConnected() {
@@ -612,6 +652,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
           ecode = 0x8000;
         }
       }
+      if (ecode !== 0x9000) this.disconnect();
     }
     let errMsg = 'other error';
     if (ecode === 0x9000) {
@@ -625,6 +666,13 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       errorMessage: errMsg,
       disconnect: (ecode === disconnectEcode),
     };
+  }
+
+  async disconnect() {
+    if (this.transport !== undefined) {
+      await this.transport.close();
+      this.transport = undefined;
+    }
   }
 
   getPublicKeyRedeemScript(publicKey) {
