@@ -650,6 +650,9 @@ async function example() {
   const xpub = await liquidLib.getXpubKey('44\'/0\'/0\'');
   console.log('getXpubKey =', xpub);
 
+  const xpub2 = await liquidLib.getXpubKey('m/44\'/0\'/0\'');
+  console.log('getXpubKey2 =', xpub2);
+
   const legacyLockingScript = liquidLib.getPublicKeyRedeemScript(
       parentPubkey.publicKey);
   console.log('legacyLockingScript =', legacyLockingScript);

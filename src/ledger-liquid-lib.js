@@ -65,7 +65,11 @@ function parseBip32Path(path, parent = false) {
     return Buffer.alloc(0);
   }
 
-  const items = path.split('/');
+  let targetPath = path;
+  if (targetPath.startsWith('m/')) {
+    targetPath = targetPath.substring(2);
+  }
+  const items = targetPath.split('/');
   if (items.length > 10) {
     throw new Error('Out of Range. Number of BIP 32 derivations to perform is up to 10.');
   }
