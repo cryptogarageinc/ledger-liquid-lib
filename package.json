@@ -1,6 +1,6 @@
 {
   "name": "ledger-liquid-lib",
-  "version": "1.0.0",
+  "version": "0.0.5",
   "description": "Ledger Hardware Wallet Liquid Wrapper Library",
   "keywords": [
     "Ledger",
@@ -36,7 +36,7 @@
   },
   "scripts": {
     "ts_example": "ts-node example_ts.ts",
-    "example": "node example.js",
+    "example": "ts-node example_ts.ts",
     "format": "eslint --ext .js,.ts *.ts *.js src/ --fix",
     "eslint_check": "eslint --ext .js,.ts *.ts *.js src/",
     "testvector1": "ts-node example_ts.ts -t -ta"
