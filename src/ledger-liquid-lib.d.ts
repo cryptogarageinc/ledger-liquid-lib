@@ -54,12 +54,23 @@ export interface GetSignatureAddressResponse extends ResponseInfo {
   signatureList: SignatureData[];
 }
 
+export interface GetDeviceListResponse extends ResponseInfo {
+  deviceList: string[];
+}
+
 export class LedgerLiquidWrapper {
   /**
    * @constructor
    * @param network network type.
    */
   constructor(network: NetworkType);
+
+  /**
+   * get usb device list.
+   *
+   * @return GetDeviceListResponse wrapped promise.
+   */
+  getDeviceList(): Promise<GetDeviceListResponse>;
 
   /**
    * connect device.
@@ -72,11 +83,21 @@ export class LedgerLiquidWrapper {
     Promise<ResponseInfo>;
 
   /**
+   * cancel connecting wait.
+   */
+  cancelConnect(): void;
+
+  /**
    * check device connection status.
    *
    * @return ResponseInfo wrapped promise.
    */
   isConnected(): Promise<ResponseInfo>;
+
+  /**
+   * disconnect current devive.
+   */
+  disconnect(): Promise<void>;
 
   /**
    * Get redeem script for public key.

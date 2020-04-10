@@ -20,6 +20,7 @@ let setAuthorization = false;
 let setIssuanceToTop = 0;
 let setReissuanceToTop = 0;
 let connectionTest = false;
+let connectDevice = '';
 let getLedgerPath = true;
 let mnemonic = '';
 let mnemonicCheck = true;
@@ -28,6 +29,8 @@ let dumpTx = false;
 let txData = '';
 let signTarget = '';
 let fixedTest = false;
+let waitCancelCount = 0;
+let currentWaitCancelCount = 0;
 
 for (let i = 2; i < process.argv.length; i++) {
   if (process.argv[i]) {
@@ -49,6 +52,8 @@ for (let i = 2; i < process.argv.length; i++) {
       fixedTest = true;
     } else if (process.argv[i] === '-p') {
       dumpTx = true;
+    } else if (process.argv[i] === '-tcwc') {
+      waitCancelCount = 30;
     } else if (process.argv[i] === '-it') {
       setIssuanceToTop = 2;
       if (setReissuanceToTop) {
@@ -98,6 +103,9 @@ for (let i = 2; i < process.argv.length; i++) {
           numArr.push(parseInt(input));
         }
         signTargetIndex = numArr;
+      } else if (process.argv[i] === '-cd') {
+        ++i;
+        connectDevice = process.argv[i];
       }
     }
   }
@@ -540,10 +548,39 @@ async function signTest() {
   }
 }
 
+async function cancelWaiting(lib: LedgerLiquidWrapper) {
+  if (currentWaitCancelCount) {
+    --currentWaitCancelCount;
+    if (currentWaitCancelCount) {
+      setTimeout(async () => {
+        await cancelWaiting(lib);
+      }, 1000);
+    } else {
+      lib.cancelConnect();
+      console.log('cancel waiting.');
+    }
+  }
+}
+
 async function execConnectionTest() {
   // connect wait test
   const liquidLib = new LedgerLiquidWrapper(networkType);
-  let connRet = await liquidLib.connect(60, '');
+  if (waitCancelCount) {
+    currentWaitCancelCount = waitCancelCount;
+    setTimeout(async () => {
+      await cancelWaiting(liquidLib);
+    }, 1000);
+  }
+  const devListResult = await liquidLib.getDeviceList();
+  if (devListResult.success) {
+    for (const desc of devListResult.deviceList) {
+      console.log('connect device :', desc);
+    }
+  } else {
+    console.log('getDeviceList error. ', devListResult);
+  }
+
+  let connRet = await liquidLib.connect(60, connectDevice);
   if (!connRet.success) {
     console.log('connection fail.(1)', connRet);
     return;
@@ -557,7 +594,7 @@ async function execConnectionTest() {
       connTestCount += 10;
     } else if (connCheckRet.errorMessage === 'connection fail.') {
       console.log('disconnect. start reconnection.');
-      connRet = await liquidLib.connect(60, '');
+      connRet = await liquidLib.connect(60, connectDevice);
       if (!connRet.success) {
         console.log('connection fail. ', connRet);
         break;
@@ -569,6 +606,7 @@ async function execConnectionTest() {
     }
     await sleep(1000);
   }
+  await liquidLib.disconnect();
 }
 
 async function example() {
@@ -585,7 +623,7 @@ async function example() {
 
   // connect wait test
   const liquidLib = new LedgerLiquidWrapper(networkType);
-  const connRet = await liquidLib.connect(60, '');
+  const connRet = await liquidLib.connect(0, '');
   if (!connRet.success) {
     console.log('connection failed. ', connRet);
     return;
@@ -611,6 +649,13 @@ async function example() {
 
   const xpub = await liquidLib.getXpubKey('44\'/0\'/0\'');
   console.log('getXpubKey =', xpub);
+
+  const xpub2 = await liquidLib.getXpubKey('m/44\'/0\'/0\'');
+  console.log('getXpubKey2 =', xpub2);
+
+  const legacyLockingScript = liquidLib.getPublicKeyRedeemScript(
+      parentPubkey.publicKey);
+  console.log('legacyLockingScript =', legacyLockingScript);
 
   let directMnemonic = false;
   if (mnemonic) {
