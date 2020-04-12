@@ -294,6 +294,7 @@ async function execSign(txHex: string,
       } else if (signHashType === 'p2sh-p2wsh') {
         signHashType = 'p2wsh';
       }
+      const utxoAmount = (utxoData.amount) ? BigInt(utxoData.amount) : 0n;
       const sighash = cfdjs.CreateElementsSignatureHash({
         tx: txHex,
         txin: {
@@ -304,7 +305,7 @@ async function execSign(txHex: string,
             hex: (!redeemScript) ? pubkey.pubkey : redeemScript,
             type: (!redeemScript) ? 'pubkey' : 'redeem_script',
           },
-          amount: utxoData.amount,
+          amount: utxoAmount,
           confidentialValueCommitment: utxoData.valueCommitment,
         },
       });
@@ -401,6 +402,8 @@ async function execSign(txHex: string,
       const rawSignatureRet = cfdjs.DecodeDerSignatureToRaw({
         signature: signatureData.signature,
       });
+      const utxoAmount = (signatureData.utxoData.amount) ?
+          BigInt(signatureData.utxoData.amount) : 0n;
       const verifySig = cfdjs.VerifySignature({
         tx: txHex,
         isElements: true,
@@ -412,7 +415,7 @@ async function execSign(txHex: string,
           redeemScript: redeemScript,
           hashType: verifyHashType,
           sighashType: 'all',
-          amount: signatureData.utxoData.amount,
+          amount: utxoAmount,
           confidentialValueCommitment: signatureData.utxoData.valueCommitment,
         },
       });
@@ -456,6 +459,8 @@ async function execSign(txHex: string,
   for (const sigData of signatureList) {
     if (!sigData.txid) continue;
     if (!sigData.address) continue;
+    const utxoAmount = (sigData.utxoData.amount) ?
+        BigInt(sigData.utxoData.amount) : 0n;
     let signedTx;
     if (!sigData.redeemScript) {
       signedTx = cfdjs.AddPubkeyHashSign({
@@ -505,7 +510,7 @@ async function execSign(txHex: string,
       txid: sigData.txid,
       vout: sigData.vout,
       address: sigData.address,
-      amount: sigData.utxoData.amount,
+      amount: utxoAmount,
       descriptor: sigData.utxoData.descriptor,
       confidentialValueCommitment: sigData.utxoData.valueCommitment,
     });

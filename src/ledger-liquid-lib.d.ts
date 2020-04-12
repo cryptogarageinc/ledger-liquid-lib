@@ -14,7 +14,7 @@ export enum AddressType {
 export interface UtxoData {
   txid: string; // key(outpoint)
   vout: number; // key(outpoint)
-  amount: bigint;
+  amount?: bigint | number;
   valueCommitment?: string;
 }
 

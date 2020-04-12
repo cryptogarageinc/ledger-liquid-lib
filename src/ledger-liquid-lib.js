@@ -846,8 +846,13 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       let isFind = false;
       for (const utxo of utxoList) {
         if ((txin.txid === utxo.txid) && (txin.vout === utxo.vout)) {
-          amountValueList.push((!utxo.valueCommitment) ?
-              utxo.amount : utxo.valueCommitment);
+          let value = 0;
+          if ('valueCommitment' in utxo) {
+            value = utxo.valueCommitment;
+          } else if ('amount' in utxo) {
+            value = utxo.amount;
+          }
+          amountValueList.push(value);
           isFind = true;
           break;
         }
