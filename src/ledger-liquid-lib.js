@@ -470,10 +470,17 @@ async function liquidProvideIssuanceInformation(transport, dectx) {
     const p1 = (idx === (dectx.vin.length - 1)) ? 0x80 : 0x00;
     if ('issuance' in dectx.vin[idx]) {
       const issuance = dectx.vin[idx].issuance;
-      data = Buffer.concat([
-        reverseBuffer(Buffer.from(issuance.assetBlindingNonce, 'hex')),
-        reverseBuffer(Buffer.from(issuance.assetEntropy, 'hex')),
-      ]);
+      if ('contractHash' in issuance) {
+        data = Buffer.concat([
+          reverseBuffer(Buffer.from(issuance.assetBlindingNonce, 'hex')),
+          reverseBuffer(Buffer.from(issuance.contractHash, 'hex')),
+        ]);
+      } else {
+        data = Buffer.concat([
+          reverseBuffer(Buffer.from(issuance.assetBlindingNonce, 'hex')),
+          reverseBuffer(Buffer.from(issuance.assetEntropy, 'hex')),
+        ]);
+      }
       if ('assetamount' in issuance) {
         data = Buffer.concat([
           data,
@@ -786,7 +793,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
           isElements: true,
           hashType: hashType,
         });
-        result = pubkeyRet;
+        result = addressRet;
       }
       ecode = result.errorCode;
       errMsg = (ecode === 0x9000) ? '' : 'other error';
