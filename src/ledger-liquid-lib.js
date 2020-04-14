@@ -431,7 +431,6 @@ async function untrustedHashSign(transport, dectx, path, pin, sigHashType) {
   return result;
 }
 
-
 async function sendProvideIssuanceInformationCmd(
     transport, data, p1) {
   const CLA = 0xe0;
@@ -470,10 +469,17 @@ async function liquidProvideIssuanceInformation(transport, dectx) {
     const p1 = (idx === (dectx.vin.length - 1)) ? 0x80 : 0x00;
     if ('issuance' in dectx.vin[idx]) {
       const issuance = dectx.vin[idx].issuance;
-      data = Buffer.concat([
-        reverseBuffer(Buffer.from(issuance.assetBlindingNonce, 'hex')),
-        reverseBuffer(Buffer.from(issuance.assetEntropy, 'hex')),
-      ]);
+      if ('contractHash' in issuance) {
+        data = Buffer.concat([
+          reverseBuffer(Buffer.from(issuance.assetBlindingNonce, 'hex')),
+          reverseBuffer(Buffer.from(issuance.contractHash, 'hex')),
+        ]);
+      } else {
+        data = Buffer.concat([
+          reverseBuffer(Buffer.from(issuance.assetBlindingNonce, 'hex')),
+          reverseBuffer(Buffer.from(issuance.assetEntropy, 'hex')),
+        ]);
+      }
       if ('assetamount' in issuance) {
         data = Buffer.concat([
           data,
@@ -564,6 +570,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     return {
       success: (ecode === 0x9000),
       errorCode: ecode,
+      errorCodeHex: ecode.toString(16),
       errorMessage: errMsg,
       disconnect: false,
       deviceList: devList,
@@ -631,6 +638,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     return {
       success: (ecode === 0x9000),
       errorCode: ecode,
+      errorCodeHex: ecode.toString(16),
       errorMessage: errMsg,
       disconnect: (ecode === disconnectEcode),
     };
@@ -667,6 +675,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     return {
       success: (ecode === 0x9000),
       errorCode: ecode,
+      errorCodeHex: ecode.toString(16),
       errorMessage: errMsg,
       disconnect: (ecode === disconnectEcode),
     };
@@ -711,6 +720,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     return {
       success: (ecode === 0x9000),
       errorCode: ecode,
+      errorCodeHex: ecode.toString(16),
       errorMessage: errMsg,
       disconnect: connRet.disconnect,
       publicKey: (!result) ? '' : compressPubkey(result.pubkey),
@@ -754,6 +764,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     return {
       success: (ecode === 0x9000),
       errorCode: ecode,
+      errorCodeHex: ecode.toString(16),
       errorMessage: errMsg,
       disconnect: connRet.disconnect,
       xpubKey: (!xpub) ? '' : xpub,
@@ -786,7 +797,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
           isElements: true,
           hashType: hashType,
         });
-        result = pubkeyRet;
+        result = addressRet;
       }
       ecode = result.errorCode;
       errMsg = (ecode === 0x9000) ? '' : 'other error';
@@ -794,6 +805,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     return {
       success: (ecode === 0x9000),
       errorCode: ecode,
+      errorCodeHex: ecode.toString(16),
       errorMessage: errMsg,
       disconnect: connRet.disconnect,
       publicKey: (!pubkeyRet) ? '' : compressPubkey(pubkeyRet.pubkey),
@@ -817,6 +829,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     return {
       success: (ecode === 0x9000),
       errorCode: ecode,
+      errorCodeHex: ecode.toString(16),
       errorMessage: errMsg,
       disconnect: connRet.disconnect,
     };
@@ -830,6 +843,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       return {
         success: connRet.success,
         errorCode: connRet.errorCode,
+        errorCodeHex: connRet.errorCode.toString(16),
         errorMessage: connRet.errorMessage,
         disconnect: connRet.disconnect,
         signatureList: signatureList,
@@ -950,6 +964,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     return {
       success: (ecode === 0x9000),
       errorCode: ecode,
+      errorCodeHex: ecode.toString(16),
       errorMessage: (ecode === 0x9000) ? '' : 'other error.',
       disconnect: false,
       signatureList: signatureList,

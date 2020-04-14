@@ -28,6 +28,7 @@ export interface WalletUtxoData extends UtxoData {
 export interface ResponseInfo {
   success: boolean;
   errorCode: number;
+  errorCodeHex: string;
   errorMessage: string;
   disconnect: boolean;
 }
