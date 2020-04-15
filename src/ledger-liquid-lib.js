@@ -587,7 +587,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     const waitLimit = (typeof maxWaitTime === 'number') ? maxWaitTime : 0xffffffff;
     const path = (typeof devicePath === 'string') ? devicePath : '';
     let transport = undefined;
-    let count = (waitLimit <= 0) ? 0 : 1;
+    let count = (waitLimit < 1) ? 0 : 1;
     let ecode = disconnectEcode;
     let errMsg = 'other error';
     while ((count <= waitLimit) && this.waitForConnecting) {
@@ -622,7 +622,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       transport = undefined;
       console.info(`connection fail. count=${count}`);
       ++count;
-      if (count != waitLimit) await sleep(1000);
+      if (count < waitLimit) await sleep(1000);
     }
 
     if (ecode === 0x9000) {
