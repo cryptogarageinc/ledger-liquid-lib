@@ -31,6 +31,8 @@ let signTarget = '';
 let fixedTest = false;
 let waitCancelCount = 0;
 let currentWaitCancelCount = 0;
+let dumpPubkeyMode = false;
+let targetBip32Path = 'm/44h/0h/0h';
 
 for (let i = 2; i < process.argv.length; i++) {
   if (process.argv[i]) {
@@ -48,6 +50,8 @@ for (let i = 2; i < process.argv.length; i++) {
       connectionTest = true;
     } else if (process.argv[i] === '-a') {
       setAuthorization = true;
+    } else if (process.argv[i] === '-dp') {
+      dumpPubkeyMode = true;
     } else if (process.argv[i] === '-f') {
       fixedTest = true;
     } else if (process.argv[i] === '-p') {
@@ -106,6 +110,9 @@ for (let i = 2; i < process.argv.length; i++) {
       } else if (process.argv[i] === '-cd') {
         ++i;
         connectDevice = process.argv[i];
+      } else if (process.argv[i] === '-path') {
+        ++i;
+        targetBip32Path = process.argv[i];
       }
     }
   }
@@ -1383,6 +1390,21 @@ async function example() {
   }
 };
 
+async function execBip32PathTest() {
+  // connect wait test
+  const liquidLib = new LedgerLiquidWrapper(networkType);
+  const connRet = await liquidLib.connect(0, '');
+  if (!connRet.success) {
+    console.log('connection failed. ', connRet);
+    return;
+  }
+
+  const pubkey = await liquidLib.getWalletPublicKey(targetBip32Path);
+  console.log('getWalletPublicKey =', pubkey);
+  const xpub = await liquidLib.getXpubKey(targetBip32Path);
+  console.log('getXpubKey =', xpub);
+}
+
 async function execFixedTest() {
   const txHex = '020000000002d026a265c15a249d6c7ae5fa7421904925438c6721b44339e25839479ec89a850000000000ffffffffd026a265c15a249d6c7ae5fa7421904925438c6721b44339e25839479ec89a850100000000ffffffff030125b251070e29ca19043cf33ccd7324e2ddab03ecc4ae0b5e77c4fc0e5cf6c95a0100000000008954400017a91492617485a7b6816675a8f9d450a36f442692dd77870125b251070e29ca19043cf33ccd7324e2ddab03ecc4ae0b5e77c4fc0e5cf6c95a0100000000000e7ef00017a914e5f656cd3ce7597eab209b4c9314e974eec2a86b870125b251070e29ca19043cf33ccd7324e2ddab03ecc4ae0b5e77c4fc0e5cf6c95a01000000000000c350000000000000';
 
@@ -1417,6 +1439,8 @@ async function execFixedTest() {
 
 if (fixedTest) {
   execFixedTest();
+} else if (dumpPubkeyMode) {
+  execBip32PathTest();
 } else if (connectionTest) {
   execConnectionTest();
 } else if ((!signTarget) && (!txData)) {

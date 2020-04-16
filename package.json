@@ -37,6 +37,8 @@
   },
   "scripts": {
     "ts_example": "ts-node example_ts.ts",
+    "pubkey": "ts-node example_ts.ts -dp",
+    "setauthkey": "ts-node example_ts.ts -a",
     "example": "ts-node example_ts.ts",
     "format": "eslint --ext .js,.ts *.ts *.js src/ --fix",
     "eslint_check": "eslint --ext .js,.ts *.ts *.js src/",
