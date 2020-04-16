@@ -972,5 +972,23 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
   }
 };
 
+const networkType = {
+  LiquidV1: 'liquidv1',
+  Regtest: 'regtest',
+};
+
+const addressType = {
+  Legacy: 'legacy',
+  P2shSegwit: 'p2sh-segwit',
+  Bech32: 'bech32',
+};
+
 module.exports = ledgerLiquidWrapper;
 module.exports.LedgerLiquidWrapper = ledgerLiquidWrapper;
+module.exports.NetworkType = networkType;
+module.exports.NetworkType.LiquidV1 = networkType.LiquidV1;
+module.exports.NetworkType.Regtest = networkType.Regtest;
+module.exports.AddressType = addressType;
+module.exports.AddressType.Legacy = addressType.Legacy;
+module.exports.AddressType.P2shSegwit = addressType.P2shSegwit;
+module.exports.AddressType.Bech32 = addressType.Bech32;
