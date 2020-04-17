@@ -620,7 +620,7 @@ async function execConnectionTest() {
 }
 
 async function example() {
-  // const addrType = AddressType.Bech32;
+  const addrType = AddressType.Bech32;
 
   const asset1 = '5ac9f65c0efcc4775e0baec4ec03abdde22473cd3cf33c0419ca290e0751b225';
 
@@ -666,6 +666,9 @@ async function example() {
   const legacyLockingScript = liquidLib.getPublicKeyRedeemScript(
       parentPubkey.publicKey);
   console.log('legacyLockingScript =', legacyLockingScript);
+
+  const addrData = liquidLib.getAddress('m/44\'/0\'/0\'', addrType);
+  console.log('getAddress =', addrData);
 
   let directMnemonic = false;
   if (mnemonic) {
@@ -1377,7 +1380,8 @@ async function example() {
     }
   }
   if (mnemonic) {
-    const tx = await execSign(liquidLib, blindTx2.hex, walletUtxoList, mnemonic);
+    const tx = await execSign(
+        liquidLib, blindTx2.hex, walletUtxoList, mnemonic);
     console.log('*** mnemonic signed tx ***\n', tx);
     if (dumpTx) {
       const decSignedTx = cfdjs.ElementsDecodeRawTransaction({
