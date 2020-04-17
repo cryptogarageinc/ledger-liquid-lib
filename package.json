@@ -14,6 +14,7 @@
     "type": "git",
     "url": "https://github.com/cryptogarageinc/ledger-liquid-lib"
   },
+  "license": "MIT",
   "main": "index.js",
   "module": "index.js",
   "types": "./src/ledger-liquid-lib.d.ts",

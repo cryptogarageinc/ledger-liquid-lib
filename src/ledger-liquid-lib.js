@@ -772,7 +772,6 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
   }
 
   async getAddress(bip32Path, addressFormat) {
-    let result = undefined;
     let addressRet = undefined;
     let pubkeyRet = undefined;
     const connRet = await this.isConnected();
@@ -780,7 +779,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     let errMsg = connRet.errorMessage;
     if (connRet.success) {
       pubkeyRet = await this.getWalletPublicKey(bip32Path);
-      result = pubkeyRet;
+      ecode = pubkeyRet.errorCode;
       if (pubkeyRet.success) {
         let hashType = 'p2sh-p2wpkh';
         if (addressFormat === 'bech32') {
@@ -797,9 +796,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
           isElements: true,
           hashType: hashType,
         });
-        result = addressRet;
       }
-      ecode = result.errorCode;
       errMsg = (ecode === 0x9000) ? '' : 'other error';
     }
     return {

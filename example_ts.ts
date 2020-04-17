@@ -667,7 +667,7 @@ async function example() {
       parentPubkey.publicKey);
   console.log('legacyLockingScript =', legacyLockingScript);
 
-  const addrData = liquidLib.getAddress('m/44\'/0\'/0\'', addrType);
+  const addrData = await liquidLib.getAddress('m/44\'/0\'/0\'', addrType);
   console.log('getAddress =', addrData);
 
   let directMnemonic = false;
