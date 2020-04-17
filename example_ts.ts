@@ -1,13 +1,12 @@
 /* eslint-disable require-jsdoc */
 import * as cfdjs from 'cfd-js';
-import {LedgerLiquidWrapper, WalletUtxoData, SignatureData} from './src/ledger-liquid-lib';
-import * as ledgerLibDefine from './src/ledger-liquid-lib-defines';
+import {LedgerLiquidWrapper, WalletUtxoData, SignatureData, NetworkType, AddressType} from './src/ledger-liquid-lib';
 
 process.on('unhandledRejection', console.dir);
 
 let hashType = 'p2sh-p2wpkh'; // 'p2sh-p2wsh';
 const blindOpt = {blind1: true, blind2: true};
-let networkType = ledgerLibDefine.NetworkType.LiquidV1;
+let networkType = NetworkType.LiquidV1;
 // eslint-disable-next-line prefer-const
 let tx2InputCount = 2;
 // eslint-disable-next-line prefer-const
@@ -37,7 +36,7 @@ let targetBip32Path = 'm/44h/0h/0h';
 for (let i = 2; i < process.argv.length; i++) {
   if (process.argv[i]) {
     if (process.argv[i] === '-r') {
-      networkType = ledgerLibDefine.NetworkType.Regtest;
+      networkType = NetworkType.Regtest;
     } else if (process.argv[i] === '-nb1') {
       blindOpt.blind1 = false;
     } else if (process.argv[i] === '-nb2') {
@@ -622,7 +621,7 @@ async function execConnectionTest() {
 }
 
 async function example() {
-  // const addrType = ledgerLibDefine.AddressType.Bech32;
+  // const addrType = AddressType.Bech32;
 
   const asset1 = '5ac9f65c0efcc4775e0baec4ec03abdde22473cd3cf33c0419ca290e0751b225';
 
