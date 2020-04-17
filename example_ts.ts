@@ -204,20 +204,12 @@ function getKeyPairFromParent(bip32Path: string): KeyPair {
   return {pubkey: pubkey.pubkey, privkey: privkey.privkey};
 }
 
-async function execSign(txHex: string,
+async function execSign(liquidLib: LedgerLiquidWrapper, txHex: string,
     signUtxoList: WalletUtxoData[], mnemonicWords: string): Promise<string> {
   let sigRet;
-  const liquidLib = new LedgerLiquidWrapper(networkType);
   let parentExtkey = '';
   const mainchainNwType = (networkType === 'liquidv1') ? 'mainnet' : 'regtest';
   if (!mnemonicWords) {
-    // connect wait test
-    const connRet = await liquidLib.connect(60, '');
-    if (!connRet.success) {
-      console.log('connection failed. ', connRet);
-      return '';
-    }
-
     // get authorization start ---------------------------------
     console.log('*** calc authorization start ***');
     const authorizationHash = cfdjs.SerializeLedgerFormat({
@@ -551,12 +543,19 @@ async function signTest() {
     });
   }
 
-  const tx = await execSign(txData, utxoDataList, '');
+  const liquidLib = new LedgerLiquidWrapper(networkType);
+  const connRet = await liquidLib.connect(0, '');
+  if (!connRet.success) {
+    console.log('connection failed. ', connRet);
+    return '';
+  }
+  const tx = await execSign(liquidLib, txData, utxoDataList, '');
   console.log('*** signed tx ***\n', tx);
   if (mnemonic) {
-    const tx = await execSign(txData, utxoDataList, mnemonic);
+    const tx = await execSign(liquidLib, txData, utxoDataList, mnemonic);
     console.log('*** mnemonic signed tx ***\n', tx);
   }
+  await liquidLib.disconnect();
 }
 
 async function cancelWaiting(lib: LedgerLiquidWrapper) {
@@ -1368,7 +1367,7 @@ async function example() {
     return;
   }
   if (!directMnemonic) {
-    const txHex = await execSign(blindTx2.hex, walletUtxoList, '');
+    const txHex = await execSign(liquidLib, blindTx2.hex, walletUtxoList, '');
     console.log('*** signed tx hex ***\n', txHex);
     if (dumpTx) {
       const decSignedTx = cfdjs.ElementsDecodeRawTransaction({
@@ -1378,7 +1377,7 @@ async function example() {
     }
   }
   if (mnemonic) {
-    const tx = await execSign(blindTx2.hex, walletUtxoList, mnemonic);
+    const tx = await execSign(liquidLib, blindTx2.hex, walletUtxoList, mnemonic);
     console.log('*** mnemonic signed tx ***\n', tx);
     if (dumpTx) {
       const decSignedTx = cfdjs.ElementsDecodeRawTransaction({
@@ -1387,6 +1386,7 @@ async function example() {
       console.log('*** Signed Tx ***\n', JSON.stringify(decSignedTx, null, '  '));
     }
   }
+  await liquidLib.disconnect();
 };
 
 async function execBip32PathTest() {
@@ -1402,6 +1402,7 @@ async function execBip32PathTest() {
   console.log('getWalletPublicKey =', pubkey);
   const xpub = await liquidLib.getXpubKey(targetBip32Path);
   console.log('getXpubKey =', xpub);
+  await liquidLib.disconnect();
 }
 
 async function execFixedTest() {
