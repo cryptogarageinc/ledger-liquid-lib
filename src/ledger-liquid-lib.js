@@ -612,9 +612,17 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
           // device connect error
         } else if (errText.indexOf('cannot open device with path') >= 0) {
           // device connect error
+        } else if (errText.indexOf('The device was disconnected') >= 0) {
+          // device connect error
+        } else if (errText.indexOf('Must be handling a user gesture to show a permission request') >= 0) {
+          // device connect error
+        } else if (errText.indexOf('No device selected.') >= 0) {
+          // disconnect error
         } else {
+          console.warn(e);
           console.log(`connection fail.(exception) count=${count}`, e);
           ecode = 0x6000;
+          errMsg = errText;
           break;
         }
       }
@@ -659,6 +667,12 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
           // disconnect error
         } else if (errText.indexOf('TransportError: NoDevice') >= 0) {
           // device connect error
+        } else if (errText.indexOf('The device was disconnected.') >= 0) {
+          // device connect error
+        } else if (errText.indexOf('Must be handling a user gesture to show a permission request') >= 0) {
+          // device connect error
+        } else if (errText.indexOf('No device selected.') >= 0) {
+          // disconnect error
         } else {
           console.log(`connection fail.(exception) `, e);
           ecode = 0x8000;

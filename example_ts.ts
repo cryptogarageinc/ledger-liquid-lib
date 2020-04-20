@@ -16,6 +16,7 @@ let setIssueTx = 0;
 let setReissueTx = 0;
 let authorizationPrivkey = '47ab8b0e5f8ea508808f9e03b804d623a7cb81cbf1f39d3e976eb83f9284ecde';
 let setAuthorization = false;
+let authPubKey = ''; // 04b85b0e5f5b41f1a95bbf9a83edd95c741223c6d9dc5fe607de18f015684ff56ec359705fcf9bbeb1620fb458e15e3d99f23c6f5df5e91e016686371a65b16f0c
 let setIssuanceToTop = 0;
 let setReissuanceToTop = 0;
 let connectionTest = false;
@@ -112,6 +113,9 @@ for (let i = 2; i < process.argv.length; i++) {
       } else if (process.argv[i] === '-path') {
         ++i;
         targetBip32Path = process.argv[i];
+      } else if (process.argv[i] === '-apk') {
+        ++i;
+        authPubKey = process.argv[i];
       }
     }
   }
@@ -680,15 +684,6 @@ async function example() {
       }
       directMnemonic = true;
     }
-  }
-
-  if (setAuthorization) {
-    const authKey = cfdjs.GetPubkeyFromPrivkey({
-      privkey: authorizationPrivkey,
-      isCompressed: false,
-    });
-    const setupRet = await liquidLib.setupHeadlessAuthorization(authKey.pubkey);
-    console.log('--HEADLESS LIQUID SEND AUTHORIZATION PUBLIC KEY --\n', setupRet);
   }
 
   interface PubkeySet {
@@ -1409,6 +1404,31 @@ async function execBip32PathTest() {
   await liquidLib.disconnect();
 }
 
+async function setAuthKeyTest() {
+  if (!authPubKey) {
+    console.log(' Please input authorization pubkey!');
+    console.log(' usage:');
+    console.log('     npm run setauthkey -- -apk <authrizationPubkey>');
+    console.log(' example(develop key):');
+    console.log('     npm run setauthkey -- -apk 04b85b0e5f5b41f1a95bbf9a83edd95c741223c6d9dc5fe607de18f015684ff56ec359705fcf9bbeb1620fb458e15e3d99f23c6f5df5e91e016686371a65b16f0c');
+    return;
+  }
+  if (authPubKey.length !== 130) {
+    console.log(' Authorization pubkey can only be used with uncompressed pubkey!');
+    return;
+  }
+  const liquidLib = new LedgerLiquidWrapper(networkType);
+  const connRet = await liquidLib.connect(0, '');
+  if (!connRet.success) {
+    console.log('connection failed. ', connRet);
+    return;
+  }
+  console.log('authrizationPubkey:', authPubKey);
+  const setupRet = await liquidLib.setupHeadlessAuthorization(authPubKey);
+  console.log('--HEADLESS LIQUID SEND AUTHORIZATION PUBLIC KEY --\n', setupRet);
+  await liquidLib.disconnect();
+}
+
 async function execFixedTest() {
   const txHex = '020000000002d026a265c15a249d6c7ae5fa7421904925438c6721b44339e25839479ec89a850000000000ffffffffd026a265c15a249d6c7ae5fa7421904925438c6721b44339e25839479ec89a850100000000ffffffff030125b251070e29ca19043cf33ccd7324e2ddab03ecc4ae0b5e77c4fc0e5cf6c95a0100000000008954400017a91492617485a7b6816675a8f9d450a36f442692dd77870125b251070e29ca19043cf33ccd7324e2ddab03ecc4ae0b5e77c4fc0e5cf6c95a0100000000000e7ef00017a914e5f656cd3ce7597eab209b4c9314e974eec2a86b870125b251070e29ca19043cf33ccd7324e2ddab03ecc4ae0b5e77c4fc0e5cf6c95a01000000000000c350000000000000';
 
@@ -1441,7 +1461,9 @@ async function execFixedTest() {
       JSON.stringify(decSignedTx, null, '  '));
 }
 
-if (fixedTest) {
+if (setAuthorization) {
+  setAuthKeyTest();
+} else if (fixedTest) {
   execFixedTest();
 } else if (dumpPubkeyMode) {
   execBip32PathTest();
