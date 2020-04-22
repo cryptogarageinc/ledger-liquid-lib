@@ -33,6 +33,7 @@ let waitCancelCount = 0;
 let currentWaitCancelCount = 0;
 let dumpPubkeyMode = false;
 let targetBip32Path = 'm/44h/0h/0h';
+let asyncConnectCheck = false;
 
 for (let i = 2; i < process.argv.length; i++) {
   if (process.argv[i]) {
@@ -58,6 +59,8 @@ for (let i = 2; i < process.argv.length; i++) {
       dumpTx = true;
     } else if (process.argv[i] === '-tcwc') {
       waitCancelCount = 30;
+    } else if (process.argv[i] === '-acc') {
+      asyncConnectCheck = true;
     } else if (process.argv[i] === '-it') {
       setIssuanceToTop = 2;
       if (setReissuanceToTop) {
@@ -560,6 +563,23 @@ async function signTest() {
     console.log('*** mnemonic signed tx ***\n', tx);
   }
   await liquidLib.disconnect();
+}
+
+let isConnectCheck = false;
+async function checkConnecting(lib: LedgerLiquidWrapper) {
+  if (isConnectCheck) {
+    const connCheckRet = await lib.isConnected();
+    if (connCheckRet.success) {
+      console.log('isConnected : connect');
+    } else if (connCheckRet.disconnect) {
+      console.log('isConnected : disconnect');
+    } else {
+      console.log('isConnected fail: ', connCheckRet);
+    }
+    setTimeout(async () => {
+      await checkConnecting(lib);
+    }, 1000);
+  }
 }
 
 async function cancelWaiting(lib: LedgerLiquidWrapper) {
@@ -1365,6 +1385,12 @@ async function example() {
     return;
   }
   if (!directMnemonic) {
+    if (asyncConnectCheck) {
+      isConnectCheck = true;
+      setTimeout(async () => {
+        await checkConnecting(liquidLib);
+      }, 1000);
+    }
     const txHex = await execSign(liquidLib, blindTx2.hex, walletUtxoList, '');
     console.log('*** signed tx hex ***\n', txHex);
     if (dumpTx) {
@@ -1373,6 +1399,7 @@ async function example() {
         mainchainNetwork: mainchainNwType});
       console.log('*** Signed Tx ***\n', JSON.stringify(decSignedTx, null, '  '));
     }
+    isConnectCheck = false;
   }
   if (mnemonic) {
     const tx = await execSign(
