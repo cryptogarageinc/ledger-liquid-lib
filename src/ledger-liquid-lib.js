@@ -664,6 +664,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
 
   async isConnected() {
     let ecode = disconnectEcode;
+    let errMsg = 'other error';
     if (this.transport !== undefined) {
       try {
         ecode = await checkConnect(this.transport);
@@ -682,11 +683,11 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
         } else {
           console.log(`connection fail.(exception) `, e);
           ecode = 0x8000;
+          errMsg = errText;
         }
       }
       if (ecode !== 0x9000) this.disconnect();
     }
-    let errMsg = 'other error';
     if (ecode === 0x9000) {
       errMsg = '';
     } else if (ecode === disconnectEcode) {
