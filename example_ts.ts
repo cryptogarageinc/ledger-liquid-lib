@@ -429,7 +429,7 @@ async function execSign(liquidLib: LedgerLiquidWrapper, txHex: string,
       console.log('verifySignature fail. =',
           JSON.stringify(signatureData, (key, value) =>
               typeof value === 'bigint' ? value.toString() : value, '  '));
-      console.warn(e);
+      console.log(e);
     }
     let isFind = false;
     for (const sigTarget of signatureList) {
@@ -520,6 +520,9 @@ async function execSign(liquidLib: LedgerLiquidWrapper, txHex: string,
       confidentialValueCommitment: sigData.utxoData.valueCommitment,
     });
     tx = signedTx.hex;
+    if (signedTest) {
+      console.log('*** sign tx ***\n', tx);
+    }
   }
   const reqVerifyJson = {
     tx: tx,
@@ -1122,6 +1125,14 @@ async function example() {
           assetBlindFactor: pathData.abf,
           blindFactor: pathData.vbf,
         });
+        if (blindReqData.issuances) {
+          blindReqData.issuances.push({
+            txid: dectx1.txid,
+            vout: pathData.vout,
+            assetBlindingKey: pathData.blindingKeyPair.privkey,
+            tokenBlindingKey: pathData.blindingKeyPair.privkey,
+          });
+        }
       }
     }
   }
@@ -1169,6 +1180,14 @@ async function example() {
             assetBlindFactor: pathData.abf,
             blindFactor: pathData.vbf,
           });
+          if (blindReqData.issuances) {
+            blindReqData.issuances.push({
+              txid: dectx1.txid,
+              vout: pathData.vout,
+              assetBlindingKey: pathData.blindingKeyPair.privkey,
+              tokenBlindingKey: pathData.blindingKeyPair.privkey,
+            });
+          }
         }
       }
     }
@@ -1288,17 +1307,6 @@ async function example() {
             assetBlindingNonce: reissueTokenPathList[i].abf,
             assetEntropy: reissueTokenPathList[i].issuanceData[0].entropy,
           });
-          if (blindReqData.txins) {
-            const token = reissueTokenPathList[i].issuanceData[0].token;
-            blindReqData.txins.push({
-              txid: dectx1.txid,
-              vout: reissueTokenPathList[i].vout,
-              amount: inputAmount2,
-              asset: (token) ? token : '',
-              assetBlindFactor: reissueTokenPathList[i].abf,
-              blindFactor: reissueTokenPathList[i].vbf,
-            });
-          }
         }
       }
       try {
@@ -1314,7 +1322,9 @@ async function example() {
       }
     }
     console.log('*** before blind tx2 ***\n', blindTx2);
-
+    console.log('*** blindInfo ***\n',
+        JSON.stringify(blindReqData, (key, value) =>
+            typeof value === 'bigint' ? value.toString() : value, '  '));
     blindReqData.tx = blindTx2.hex;
     blindTx2 = cfdjs.BlindRawTransaction(blindReqData);
   }
@@ -1332,37 +1342,22 @@ async function example() {
     return;
   }
   const walletUtxoList: WalletUtxoData[] = [];
-  for (let i = 0; i < dectx2.vin.length; ++i) {
-    let isTarget = false;
-    for (const num of signTargetIndex) {
-      if (i === num) {
-        isTarget = true;
-        break;
-      }
+  for (const num of signTargetIndex) {
+    if (num >= dectx2.vin.length) {
+      continue;
     }
-    if (isTarget) {
-      const txin = dectx2.vin[i];
-      let isFind = false;
-      const txid = dectx1.txid;
-      const utxoList = [pathList, reissueTokenPathList];
-      for (const list of utxoList) {
-        for (const data of list) {
-          if (data.vout == txin.vout) {
-            if (data.pubkeyList.length > 0) {
-              for (const pubkeyData of data.pubkeyList) {
-                walletUtxoList.push({
-                  bip32Path: pubkeyData.bip32Path,
-                  txid: txid,
-                  vout: txin.vout,
-                  amount: data.amount,
-                  valueCommitment: data.valueCommitment,
-                  redeemScript: '',
-                  descriptor: data.descriptor,
-                });
-              }
-            } else {
+    const i = num;
+    const txin = dectx2.vin[i];
+    let isFind = false;
+    const txid = dectx1.txid;
+    const utxoList = [pathList, reissueTokenPathList];
+    for (const list of utxoList) {
+      for (const data of list) {
+        if (data.vout == txin.vout) {
+          if (data.pubkeyList.length > 0) {
+            for (const pubkeyData of data.pubkeyList) {
               walletUtxoList.push({
-                bip32Path: data.bip32Path,
+                bip32Path: pubkeyData.bip32Path,
                 txid: txid,
                 vout: txin.vout,
                 amount: data.amount,
@@ -1371,12 +1366,22 @@ async function example() {
                 descriptor: data.descriptor,
               });
             }
-            isFind = true;
-            break;
+          } else {
+            walletUtxoList.push({
+              bip32Path: data.bip32Path,
+              txid: txid,
+              vout: txin.vout,
+              amount: data.amount,
+              valueCommitment: data.valueCommitment,
+              redeemScript: '',
+              descriptor: data.descriptor,
+            });
           }
+          isFind = true;
+          break;
         }
-        if (isFind) continue;
       }
+      if (isFind) continue;
     }
   }
 

@@ -298,9 +298,9 @@ async function startUntrustedTransaction(transport, dectx, isContinue,
     const txid = reverseBuffer(Buffer.from(dectx.vin[idx].txid, 'hex'));
     const vout = Buffer.alloc(4);
     vout.writeUInt32LE(dectx.vin[idx].vout, 0);
-    // if ('issuance' in dectx.vin[idx]) {
-    //   vout[3] |= 0x80;
-    // }
+    if ('issuance' in dectx.vin[idx]) {
+      vout[3] |= 0x80;
+    }
     let value;
     if ((typeof amountValueList[idx] === 'number') ||
         (typeof amountValueList[idx] === 'bigint')) {
@@ -327,6 +327,53 @@ async function startUntrustedTransaction(transport, dectx, isContinue,
       }
     } else {
       errData = await sendHashInputStartCmd(transport, p1, p2, sequence);
+      if (errData.errorCode != 0x9000) {
+        console.log('fail sendHashInputStartCmd2', errData);
+        break;
+      }
+    }
+
+    if ((inputIndex !== -1) && ('issuance' in dectx.vin[idx])) {
+      let data;
+      const issuance = dectx.vin[idx].issuance;
+      if ('contractHash' in issuance) {
+        data = Buffer.concat([
+          reverseBuffer(Buffer.from(issuance.assetBlindingNonce, 'hex')),
+          reverseBuffer(Buffer.from(issuance.contractHash, 'hex')),
+        ]);
+      } else {
+        data = Buffer.concat([
+          reverseBuffer(Buffer.from(issuance.assetBlindingNonce, 'hex')),
+          reverseBuffer(Buffer.from(issuance.assetEntropy, 'hex')),
+        ]);
+      }
+      if ('assetamount' in issuance) {
+        data = Buffer.concat([
+          data,
+          convertValueFromAmount(issuance.assetamount),
+        ]);
+      } else if ('assetamountcommitment' in issuance) {
+        data = Buffer.concat([
+          data,
+          Buffer.from(issuance.assetamountcommitment, 'hex'),
+        ]);
+      } else {
+        data = Buffer.concat([data, Buffer.alloc(1)]);
+      }
+      if ('tokenamount' in issuance) {
+        data = Buffer.concat([
+          data,
+          convertValueFromAmount(issuance.tokenamount),
+        ]);
+      } else if ('tokenamountcommitment' in issuance) {
+        data = Buffer.concat([
+          data,
+          Buffer.from(issuance.tokenamountcommitment, 'hex'),
+        ]);
+      } else {
+        data = Buffer.concat([data, Buffer.alloc(1)]);
+      }
+      errData = await sendHashInputStartCmd(transport, p1, p2, data);
       if (errData.errorCode != 0x9000) {
         console.log('fail sendHashInputStartCmd2', errData);
         break;
