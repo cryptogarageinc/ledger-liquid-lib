@@ -34,6 +34,7 @@ let currentWaitCancelCount = 0;
 let dumpPubkeyMode = false;
 let targetBip32Path = 'm/44h/0h/0h';
 let asyncConnectCheck = false;
+let testContractHash = '0000000000000000000000000000000000000000000000000000000000000000';
 
 for (let i = 2; i < process.argv.length; i++) {
   if (process.argv[i]) {
@@ -119,6 +120,9 @@ for (let i = 2; i < process.argv.length; i++) {
       } else if (process.argv[i] === '-apk') {
         ++i;
         authPubKey = process.argv[i];
+      } else if (process.argv[i] === '-ch') {
+        ++i;
+        testContractHash = process.argv[i];
       }
     }
   }
@@ -931,7 +935,7 @@ async function example() {
           assetAddress: pathData.confidentialAddress,
           tokenAmount: inputAmount2,
           tokenAddress: tokenPathData.confidentialAddress,
-          contractHash: empty256,
+          contractHash: testContractHash,
           isRemoveNonce: false,
           isBlind: true,
         }],
@@ -1240,7 +1244,7 @@ async function example() {
         assetAddress: pathData.confidentialAddress,
         tokenAmount: inputAmount2,
         tokenAddress: tokenData.confidentialAddress,
-        contractHash: empty256,
+        contractHash: testContractHash,
         isBlind: true,
       });
       pathData.issuanceData.push({
