@@ -34,6 +34,8 @@ let currentWaitCancelCount = 0;
 let dumpPubkeyMode = false;
 let targetBip32Path = 'm/44h/0h/0h';
 let asyncConnectCheck = false;
+let asyncCommandCheck = false;
+let reconnectTest = false;
 let testContractHash = '0000000000000000000000000000000000000000000000000000000000000000';
 
 for (let i = 2; i < process.argv.length; i++) {
@@ -62,6 +64,7 @@ for (let i = 2; i < process.argv.length; i++) {
       waitCancelCount = 30;
     } else if (process.argv[i] === '-acc') {
       asyncConnectCheck = true;
+      asyncCommandCheck = true;
     } else if (process.argv[i] === '-it') {
       setIssuanceToTop = 2;
       if (setReissuanceToTop) {
@@ -75,6 +78,8 @@ for (let i = 2; i < process.argv.length; i++) {
     } else if (process.argv[i] === '-ic') {
       mnemonicCheck = false;
       getLedgerPath = false;
+    } else if (process.argv[i] === '-rct') {
+      reconnectTest = true;
     } else if (i+1 < process.argv.length) {
       if (process.argv[i] === '-h') {
         ++i;
@@ -576,10 +581,11 @@ let isConnectCheck = false;
 async function checkConnecting(lib: LedgerLiquidWrapper) {
   if (isConnectCheck) {
     const connCheckRet = await lib.isConnected();
+    const accessing = lib.isAccessing();
     if (connCheckRet.success) {
-      console.log('isConnected : connect');
+      console.log(`isConnected : connect, accessing=${accessing}`);
     } else if (connCheckRet.disconnect) {
-      console.log('isConnected : disconnect');
+      console.log(`isConnected : disconnect, accessing=${accessing}`);
     } else {
       console.log('isConnected fail: ', connCheckRet);
     }
@@ -587,6 +593,21 @@ async function checkConnecting(lib: LedgerLiquidWrapper) {
       await checkConnecting(lib);
     }, 1000);
   }
+}
+
+let multiAccessTestCount = 0;
+async function multiAccessTest(lib: LedgerLiquidWrapper) {
+  if (multiAccessTestCount === 0) {
+    const pubkeyRet = await lib.getWalletPublicKey('44h/0h/0h');
+    console.log('async getWalletPublicKey:', pubkeyRet);
+    setTimeout(async () => {
+      await multiAccessTest(lib);
+    }, 5000);
+  } else if (multiAccessTestCount === 1) {
+    const xpubkeyRet = await lib.getXpubKey('44h/0h/0h');
+    console.log('async getXpubKey:', xpubkeyRet);
+  }
+  multiAccessTestCount++;
 }
 
 async function cancelWaiting(lib: LedgerLiquidWrapper) {
@@ -633,6 +654,11 @@ async function execConnectionTest() {
       await sleep(10000);
       console.log('10 sec wait end.');
       connTestCount += 10;
+      if (reconnectTest) {
+        console.log('exec connect.');
+        connRet = await liquidLib.connect(0, connectDevice);
+        console.log('connect result:', connRet);
+      }
     } else if (connCheckRet.errorMessage === 'connection fail.') {
       console.log('disconnect. start reconnection.');
       connRet = await liquidLib.connect(60, connectDevice);
@@ -1400,6 +1426,11 @@ async function example() {
         await checkConnecting(liquidLib);
       }, 1000);
     }
+    if (asyncCommandCheck) {
+      setTimeout(async () => {
+        await multiAccessTest(liquidLib);
+      }, 5000);
+    }
     const txHex = await execSign(liquidLib, blindTx2.hex, walletUtxoList, '');
     console.log('*** signed tx hex ***\n', txHex);
     if (dumpTx) {
@@ -1409,6 +1440,10 @@ async function example() {
       console.log('*** Signed Tx ***\n', JSON.stringify(decSignedTx, null, '  '));
     }
     isConnectCheck = false;
+    if (asyncConnectCheck) {
+      const accessing = liquidLib.isAccessing();
+      console.log(`accessing: ${accessing}`);
+    }
   }
   if (mnemonic) {
     const tx = await execSign(

@@ -74,6 +74,13 @@ export class LedgerLiquidWrapper {
   getDeviceList(): Promise<GetDeviceListResponse>;
 
   /**
+   * Check if it is accessing Ledger.
+   *
+   * @return true is accessing ledger(connect, getSignature, etc).
+   */
+  isAccessing(): boolean;
+
+  /**
    * connect device.
    *
    * @param maxWaitTime maximum waiting time (sec).
