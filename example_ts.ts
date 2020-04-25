@@ -647,6 +647,7 @@ async function execConnectionTest() {
     console.log('connection fail.(1)', connRet);
     return;
   }
+  console.log('current application:', liquidLib.getCurrentApplication());
   for (let connTestCount = 0; connTestCount < 120; ++connTestCount) {
     const connCheckRet = await liquidLib.isConnected();
     if (connCheckRet.success) {
@@ -667,6 +668,7 @@ async function execConnectionTest() {
         break;
       }
       console.log('reconnect success.');
+      console.log('current application:', liquidLib.getCurrentApplication());
     } else {
       console.log('isConnected fail.(2)', connCheckRet);
       break;
@@ -695,6 +697,7 @@ async function example() {
     console.log('connection failed. ', connRet);
     return;
   }
+  console.log('current application:', liquidLib.getCurrentApplication());
 
   const mainchainNwType = (networkType === 'liquidv1') ? 'mainnet' : 'regtest';
   const parentPath = '44\'/0\'/0\'/0';

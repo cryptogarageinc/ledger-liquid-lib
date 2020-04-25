@@ -569,29 +569,44 @@ const disconnectEcode = 0x6d00; // INS_NOT_SUPPORTED
 const accessingEcode = 0x9999;
 const accessingMsg = 'accessing other command';
 
-async function checkConnect(transport) {
+const applicationType = {
+  LiquidV1: 'liquidv1',
+  Regtest: 'regtest',
+  Auto: 'auto',
+};
+
+async function checkConnect(transport, checkAppType) {
   // console.time('call getCoinVersion');
   const result = await getCoinVersion(transport);
   // console.timeEnd('call getCoinVersion');
   // console.log('getCoinVersion =', result);
+  let connectApp = applicationType.Auto;
+  let ecode = result.errorCode;
   if (result.errorCode === 0x9000) {
     if ((result.prefixP2pkh === 0x39) &&
         (result.prefixP2sh === 0x27) &&
         (result.coinFamily === 0x01) &&
         (result.coinName === 'Bitcoin') &&
-        (result.coinTicker === 'BTC')) {
+        (result.coinTicker === 'BTC') &&
+        (checkAppType !== applicationType.Regtest)) {
       // liquid mainnet
+      connectApp = applicationType.LiquidV1;
     } else if ((result.prefixP2pkh === 0xeb) &&
         (result.prefixP2sh === 0x4b) &&
         (result.coinFamily === 0x01) &&
         (result.coinName === 'Bitcoin') &&
-        (result.coinTicker === 'BTC')) {
+        (result.coinTicker === 'BTC') &&
+        (checkAppType !== applicationType.LiquidV1)) {
       // liquid testnet
+      connectApp = applicationType.Regtest;
     } else {
-      return disconnectEcode;
+      ecode = disconnectEcode;
     }
   }
-  return result.errorCode;
+  return {
+    errorCode: ecode,
+    application: connectApp,
+  };
 }
 
 function compressPubkey(publicKey) {
@@ -599,17 +614,55 @@ function compressPubkey(publicKey) {
   return cfdjs.GetCompressedPubkey({pubkey: publicKey}).pubkey;
 }
 
+const networkTypeDefine = {
+  LiquidV1: 'liquidv1',
+  Regtest: 'regtest',
+};
+
+const addressType = {
+  Legacy: 'legacy',
+  P2shSegwit: 'p2sh-segwit',
+  Bech32: 'bech32',
+};
+
+const currentApplicationType = {
+  LiquidHeadless: 'Liquid Hless',
+  LiquidTestHeadless: 'Liquid Test Hless',
+  Empty: '',
+};
+
 const ledgerLiquidWrapper = class LedgerLiquidWrapper {
-  constructor(networkType) {
+  constructor(networkType, checkApplication = false) {
     this.transport = undefined;
-    if ((networkType !== 'liquidv1') && (networkType !== 'regtest')) {
+    if ((networkType !== networkTypeDefine.LiquidV1) &&
+        (networkType !== networkTypeDefine.Regtest)) {
       throw new Error('illegal network type.');
     }
+    let checkAppType = applicationType.Auto;
+    if (checkApplication && checkApplication === true) {
+      if (networkType === networkTypeDefine.LiquidV1) {
+        checkAppType = applicationType.LiquidV1;
+      } else {
+        checkAppType = applicationType.Regtest;
+      }
+    }
     this.networkType = networkType;
-    this.mainchainNetwork = (networkType === 'regtest') ?
+    this.mainchainNetwork = (networkType === networkTypeDefine.Regtest) ?
         'regtest' : 'mainnet';
     this.waitForConnecting = false;
     this.accessing = false;
+    this.checkAppType = checkAppType;
+    this.currentApplication = applicationType.Auto;
+  }
+
+  getCurrentApplication() {
+    if (this.currentApplication === applicationType.LiquidV1) {
+      return currentApplicationType.LiquidHeadless;
+    } else if (this.currentApplication === applicationType.Regtest) {
+      return currentApplicationType.LiquidTestHeadless;
+    } else {
+      return currentApplicationType.Empty;
+    }
   }
 
   async getDeviceList() {
@@ -674,13 +727,15 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
           try {
             transport = await TransportNodeHid.open(path);
 
-            ecode = await checkConnect(transport);
+            const ret = await checkConnect(transport, this.checkAppType);
+            ecode = ret.errorCode;
             if (ecode === 0x9000) {
               this.transport = transport;
+              this.currentApplication = ret.application;
               break;
             } else if (ecode !== disconnectEcode) {
               console.log('illegal error. ', ecode);
-              await transport.close();
+              await this.close(transport);
               break;
             }
           } catch (e) {
@@ -706,7 +761,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
               break;
             }
           }
-          if (transport) await transport.close();
+          if (transport) await this.close(transport);
           transport = undefined;
           console.info(`connection fail. count=${count}`);
           ++count;
@@ -751,7 +806,8 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     } else if (this.transport !== undefined) {
       try {
         this.accessing = true;
-        ecode = await checkConnect(this.transport);
+        const ret = await checkConnect(this.transport, this.checkAppType);
+        ecode = ret.errorCode;
       } catch (e) {
         const errText = e.toString();
         if (errText.indexOf('DisconnectedDevice: Cannot write to HID device') >= 0) {
@@ -793,13 +849,20 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     if (this.transport !== undefined) {
       try {
         this.accessing = true;
-        await this.transport.close();
+        await this.close(this.transport);
         this.transport = undefined;
       } catch (e) {
         console.log(e);
       } finally {
+        this.currentApplication = applicationType.Auto;
         this.accessing = false;
       }
+    }
+  }
+
+  async close(transport) {
+    if (transport !== undefined) {
+      await transport.close();
     }
   }
 
@@ -1153,22 +1216,17 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
   }
 };
 
-const networkType = {
-  LiquidV1: 'liquidv1',
-  Regtest: 'regtest',
-};
-
-const addressType = {
-  Legacy: 'legacy',
-  P2shSegwit: 'p2sh-segwit',
-  Bech32: 'bech32',
-};
-
 module.exports = ledgerLiquidWrapper;
 module.exports.LedgerLiquidWrapper = ledgerLiquidWrapper;
-module.exports.NetworkType = networkType;
-module.exports.NetworkType.LiquidV1 = networkType.LiquidV1;
-module.exports.NetworkType.Regtest = networkType.Regtest;
+module.exports.NetworkType = networkTypeDefine;
+module.exports.NetworkType.LiquidV1 = networkTypeDefine.LiquidV1;
+module.exports.NetworkType.Regtest = networkTypeDefine.Regtest;
+module.exports.ApplicationType = currentApplicationType;
+module.exports.ApplicationType.LiquidHeadless =
+  currentApplicationType.LiquidHeadless;
+module.exports.ApplicationType.LiquidTestHeadless =
+  currentApplicationType.LiquidTestHeadless;
+module.exports.ApplicationType.Empty = currentApplicationType.Empty;
 module.exports.AddressType = addressType;
 module.exports.AddressType.Legacy = addressType.Legacy;
 module.exports.AddressType.P2shSegwit = addressType.P2shSegwit;

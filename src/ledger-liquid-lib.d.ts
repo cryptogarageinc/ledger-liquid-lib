@@ -5,6 +5,12 @@ export enum NetworkType {
   Regtest = 'regtest',
 }
 
+export enum ApplicationType {
+  LiquidHeadless = 'Liquid Hless',
+  LiquidTestHeadless = 'Liquid Test Hless',
+  Empty = '',
+}
+
 export enum AddressType {
   Legacy = 'legacy',
   P2shSegwit = 'p2sh-segwit',
@@ -63,8 +69,16 @@ export class LedgerLiquidWrapper {
   /**
    * @constructor
    * @param network network type.
+   * @param checkApplication application check flag.
    */
-  constructor(network: NetworkType);
+  constructor(network: NetworkType, checkApplication?: boolean);
+
+  /**
+   * get application type.
+   *
+   * @return ApplicationType
+   */
+  getCurrentApplication(): ApplicationType;
 
   /**
    * get usb device list.
