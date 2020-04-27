@@ -939,7 +939,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
           if (ecode === 0x9000) {
             const pubkey = await getWalletPublicKey(
                 this.transport, bip32Path, p2);
-            ecode = parent.errorCode;
+            ecode = pubkey.errorCode;
             if (ecode === 0x9000) {
               ecode = 0x8000;
               const pathArr = parseBip32Path(bip32Path).array;
