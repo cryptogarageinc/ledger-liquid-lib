@@ -828,7 +828,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       } finally {
         this.accessing = false;
       }
-      if (ecode !== 0x9000) this.disconnect();
+      if (ecode !== 0x9000) await this.disconnect();
     }
 
     if (ecode === 0x9000) {
