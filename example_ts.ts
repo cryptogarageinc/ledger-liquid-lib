@@ -37,6 +37,7 @@ let asyncConnectCheck = false;
 let asyncCommandCheck = false;
 let reconnectTest = false;
 let testContractHash = '0000000000000000000000000000000000000000000000000000000000000000';
+let continousCount = 0;
 
 for (let i = 2; i < process.argv.length; i++) {
   if (process.argv[i]) {
@@ -128,6 +129,9 @@ for (let i = 2; i < process.argv.length; i++) {
       } else if (process.argv[i] === '-ch') {
         ++i;
         testContractHash = process.argv[i];
+      } else if (process.argv[i] === '-continous_test') {
+        ++i;
+        continousCount = parseInt(process.argv[i]);
       }
     }
   }
@@ -257,6 +261,9 @@ async function execSign(liquidLib: LedgerLiquidWrapper, txHex: string,
     console.log(`*** getSignature end. ***`,
         JSON.stringify(sigRet, (key, value) =>
             typeof value === 'bigint' ? value.toString() : value, '  '));
+    if (!sigRet.success && continousCount) {
+      throw new Error('getSignature fail.');
+    }
   } else {
     const seed = cfdjs.ConvertMnemonicToSeed({
       mnemonic: mnemonicWords.split(' '),
@@ -375,8 +382,12 @@ async function execSign(liquidLib: LedgerLiquidWrapper, txHex: string,
     }
     let pubkeyData;
     if (!mnemonicWords) {
-      const pubkeyRet = await await liquidLib.getWalletPublicKey(
+      const pubkeyRet = await liquidLib.getWalletPublicKey(
           signatureData.utxoData.bip32Path);
+      if (!pubkeyRet.success && continousCount) {
+        console.warn(pubkeyRet);
+        throw new Error('getWalletPublicKey fail.');
+      }
       pubkeyData = pubkeyRet.publicKey;
     } else {
       const extkey = cfdjs.CreateExtkeyFromParentPath({
@@ -695,11 +706,17 @@ async function example() {
   const connRet = await liquidLib.connect(0, '');
   if (!connRet.success) {
     console.log('connection failed. ', connRet);
+    if (continousCount) {
+      throw new Error('connect fail.');
+    }
     return;
   }
   console.log('current application:', liquidLib.getCurrentApplication());
   const fwVer = await liquidLib.getApplicationInfo();
   console.log('firmware version:', fwVer);
+  if (!fwVer.success && continousCount) {
+    throw new Error('getApplicationInfo fail.');
+  }
 
   const mainchainNwType = (networkType === 'liquidv1') ? 'mainnet' : 'regtest';
   const parentPath = '44\'/0\'/0\'/0';
@@ -707,6 +724,9 @@ async function example() {
   const childPath = parentPath + '/' + childNumber;
   const parentPubkey = await liquidLib.getWalletPublicKey(parentPath);
   console.log('parentPubkey -> ', parentPubkey);
+  if (!parentPubkey.success && continousCount) {
+    throw new Error('getWalletPublicKey fail.');
+  }
 
   const extkey = cfdjs.CreateExtkeyFromParentKey({
     network: mainchainNwType,
@@ -721,9 +741,15 @@ async function example() {
 
   const xpub = await liquidLib.getXpubKey('44\'/0\'/0\'');
   console.log('getXpubKey =', xpub);
+  if (!xpub.success && continousCount) {
+    throw new Error('getXpubKey fail.');
+  }
 
   const xpub2 = await liquidLib.getXpubKey('m/44\'/0\'/0\'');
   console.log('getXpubKey2 =', xpub2);
+  if (!xpub2.success && continousCount) {
+    throw new Error('getXpubKey fail.');
+  }
 
   const legacyLockingScript = liquidLib.getPublicKeyRedeemScript(
       parentPubkey.publicKey);
@@ -731,6 +757,9 @@ async function example() {
 
   const addrData = await liquidLib.getAddress('m/44\'/0\'/0\'', addrType);
   console.log('getAddress =', addrData);
+  if (!addrData.success && continousCount) {
+    throw new Error('getAddress fail.');
+  }
 
   let directMnemonic = false;
   if (mnemonic) {
@@ -1537,6 +1566,27 @@ async function execFixedTest() {
       JSON.stringify(decSignedTx, null, '  '));
 }
 
+async function exampleMultiTest() {
+  for (let idx=0; idx<continousCount; ++idx) {
+    switch (idx % 4) {
+      case 0:
+        hashType = 'p2sh-p2wsh';
+        break;
+      case 1:
+        hashType = 'p2sh-p2wpkh';
+        break;
+      case 2:
+        hashType = 'p2wsh';
+        break;
+      case 3:
+      default:
+        hashType = 'p2wpkh';
+        break;
+    }
+    await example();
+  }
+}
+
 if (setAuthorization) {
   setAuthKeyTest();
 } else if (fixedTest) {
@@ -1546,7 +1596,11 @@ if (setAuthorization) {
 } else if (connectionTest) {
   execConnectionTest();
 } else if ((!signTarget) && (!txData)) {
-  example();
+  if (!continousCount) {
+    example();
+  } else {
+    exampleMultiTest();
+  }
 } else {
   signTest();
 }
