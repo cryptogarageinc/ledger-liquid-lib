@@ -205,6 +205,52 @@ async function getCoinVersion(transport) {
   };
 }
 
+// GET FIRMWARE VERSION
+async function getFirmwareVersion(transport) {
+  const CLA = 0xe0;
+  const GET_FIRMWARE_VERSION = 0xc4;
+  const apdu = Buffer.from([CLA, GET_FIRMWARE_VERSION, 0, 0, 0]);
+  const exchangeRet = await transport.exchange(apdu);
+  const result = (exchangeRet.length <= 2) ? exchangeRet :
+    exchangeRet.subarray(exchangeRet.length - 2);
+  let version = '';
+  let flag = 0;
+  let architecture = 0;
+  let major = 0;
+  let minor = 0;
+  let patch = 0;
+  let loaderMajor = 0;
+  let loaderMinor = 0;
+  if (exchangeRet.length >= 5) {
+    flag = exchangeRet[0];
+    architecture = exchangeRet[1];
+    major = exchangeRet[2];
+    minor = exchangeRet[3];
+    patch = exchangeRet[4];
+    version = `${major}.${minor}.${patch}.`;
+    if (exchangeRet.length >= 7) {
+      loaderMajor = exchangeRet[5];
+      loaderMinor = exchangeRet[6];
+    }
+  }
+  return {
+    errorCode: convertErrorCode(result),
+    versionString: version,
+    flag: flag,
+    architecture: architecture,
+    version: {
+      major: major,
+      minor: minor,
+      patch: patch,
+    },
+    loader: {
+      major: loaderMajor,
+      minor: loaderMinor,
+      patch: 0,
+    },
+  };
+}
+
 async function liquidSetupHeadless(transport, authorizationPublicKeyHex) {
   const ADM_CLA = 0xd0;
   const LIQUID_SETUP_HEADLESS = 0x02;
@@ -864,6 +910,44 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     if (transport !== undefined) {
       await transport.close();
     }
+  }
+
+  async getApplicationInfo() {
+    let result = undefined;
+    let connRet = undefined;
+    let ecode = accessingEcode;
+    let errMsg = accessingMsg;
+    if (this.isAccessing() === false) {
+      connRet = await this.isConnected();
+      ecode = connRet.errorCode;
+      errMsg = connRet.errorMessage;
+      if (connRet.success) {
+        try {
+          this.accessing = true;
+          result = await getFirmwareVersion(this.transport);
+          ecode = result.errorCode;
+          errMsg = (ecode === 0x9000) ? '' : 'other error';
+        } catch (e) {
+          console.log(e);
+          ecode = 0x8000;
+          errMsg = e.toString();
+        } finally {
+          this.accessing = false;
+        }
+      }
+    }
+    return {
+      success: (ecode === 0x9000),
+      errorCode: ecode,
+      errorCodeHex: ecode.toString(16),
+      errorMessage: errMsg,
+      disconnect: (!connRet) ? false : connRet.disconnect,
+      name: this.getCurrentApplication(),
+      flag: (!result) ? '' : result.flag,
+      architecture: (!result) ? '' : result.architecture,
+      version: (!result) ? '' : result.version,
+      loaderVersion: (!result) ? '' : result.loader,
+    };
   }
 
   getPublicKeyRedeemScript(publicKey) {

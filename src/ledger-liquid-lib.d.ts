@@ -31,12 +31,26 @@ export interface WalletUtxoData extends UtxoData {
   redeemScript?: string; // redeem script. Only one of the descriptor is set. pubkey-hash is unused.
 }
 
+export interface VersionInfo {
+  major: number;
+  minor: number;
+  patch: number;
+}
+
 export interface ResponseInfo {
   success: boolean;
   errorCode: number;
   errorCodeHex: string;
   errorMessage: string;
   disconnect: boolean;
+}
+
+export interface GetApplicationInfoResponse extends ResponseInfo {
+  name: string;
+  flag: number;
+  architecture: number;
+  version: VersionInfo;
+  loaderVersion: VersionInfo;
 }
 
 export interface GetPublicKeyResponse extends ResponseInfo {
@@ -120,6 +134,13 @@ export class LedgerLiquidWrapper {
    * disconnect current devive.
    */
   disconnect(): Promise<void>;
+
+  /**
+   * Get application information.
+   *
+   * @returns GetApplicationInfoResponse wrapped promise.
+   */
+  getApplicationInfo(): Promise<GetApplicationInfoResponse>;
 
   /**
    * Get redeem script for public key.

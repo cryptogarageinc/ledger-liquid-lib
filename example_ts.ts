@@ -698,6 +698,8 @@ async function example() {
     return;
   }
   console.log('current application:', liquidLib.getCurrentApplication());
+  const fwVer = await liquidLib.getApplicationInfo();
+  console.log('firmware version:', fwVer);
 
   const mainchainNwType = (networkType === 'liquidv1') ? 'mainnet' : 'regtest';
   const parentPath = '44\'/0\'/0\'/0';
