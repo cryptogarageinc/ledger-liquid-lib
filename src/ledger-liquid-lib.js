@@ -61,14 +61,14 @@ function convertValueFromAmount(amount) {
 }
 
 function parseBip32Path(path, parent = false) {
-  if (path === '') {
-    return Buffer.alloc(0);
-  }
-
   let targetPath = path;
   if (targetPath.startsWith('m/')) {
     targetPath = targetPath.substring(2);
   }
+  if (targetPath === '') {
+    throw new Error('empty BIP 32 path.');
+  }
+
   const items = targetPath.split('/');
   if (items.length > 10) {
     throw new Error('Out of Range. Number of BIP 32 derivations to perform is up to 10.');
@@ -76,6 +76,9 @@ function parseBip32Path(path, parent = false) {
   const hardendedTargets = ['\'', 'h', 'H'];
 
   const length = (parent) ? items.length - 1 : items.length;
+  if (length === 0) {
+    throw new Error('Out of Range. Number of BIP 32 derivations to perform is empty.');
+  }
   const buf = Buffer.alloc(length * 4);
   const array = [];
   for (let idx = 0; idx < length; ++idx) {
@@ -809,7 +812,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
           }
           if (transport) await this.close(transport);
           transport = undefined;
-          console.info(`connection fail. count=${count}`);
+          if (count !== 0) console.info(`connection fail. count=${count}`);
           ++count;
           if (count < waitLimit) await sleep(1000);
         }
