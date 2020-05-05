@@ -32,6 +32,7 @@ let fixedTest = false;
 let waitCancelCount = 0;
 let currentWaitCancelCount = 0;
 let dumpPubkeyMode = false;
+let debugMode = false;
 let targetBip32Path = 'm/44h/0h/0h';
 let asyncConnectCheck = false;
 let asyncCommandCheck = false;
@@ -44,6 +45,8 @@ for (let i = 2; i < process.argv.length; i++) {
   if (process.argv[i]) {
     if (process.argv[i] === '-r') {
       networkType = NetworkType.Regtest;
+    } else if (process.argv[i] === '-d') {
+      debugMode = true;
     } else if (process.argv[i] === '-nb1') {
       blindOpt.blind1 = false;
     } else if (process.argv[i] === '-nb2') {
@@ -1506,14 +1509,27 @@ async function execBip32PathTest() {
   const liquidLib = new LedgerLiquidWrapper(networkType);
   const connRet = await liquidLib.connect(0, '');
   if (!connRet.success) {
-    console.log('connection failed. ', connRet);
+    if (debugMode || (connRet.disconnect === false)) {
+      console.log('connection failed. ', connRet);
+    } else {
+      console.log(connRet.errorMessage);
+    }
     return;
   }
 
   const pubkey = await liquidLib.getWalletPublicKey(targetBip32Path);
-  console.log('getWalletPublicKey =', pubkey);
-  const xpub = await liquidLib.getXpubKey(targetBip32Path);
-  console.log('getXpubKey =', xpub);
+  if (debugMode || (pubkey.success === false)) {
+    console.log('getWalletPublicKey =', pubkey);
+  }
+  if (pubkey.success) {
+    const xpub = await liquidLib.getXpubKey(targetBip32Path);
+    if (debugMode || (xpub.success === false)) {
+      console.log('getXpubKey =', xpub);
+    } else {
+      console.log(`xpub(${targetBip32Path}) = ${xpub.xpubKey}`);
+      console.log('PublicKey =', pubkey.publicKey);
+    }
+  }
   await liquidLib.disconnect();
 }
 
@@ -1533,12 +1549,25 @@ async function setAuthKeyTest() {
   const liquidLib = new LedgerLiquidWrapper(networkType);
   const connRet = await liquidLib.connect(0, '');
   if (!connRet.success) {
-    console.log('connection failed. ', connRet);
+    if (debugMode || (connRet.disconnect === false)) {
+      console.log('connection failed. ', connRet);
+    } else {
+      console.log(connRet.errorMessage);
+    }
     return;
   }
   console.log('authrizationPubkey:', authPubKey);
   const setupRet = await liquidLib.setupHeadlessAuthorization(authPubKey);
-  console.log('--HEADLESS LIQUID SEND AUTHORIZATION PUBLIC KEY --\n', setupRet);
+  console.log('--HEADLESS LIQUID SEND AUTHORIZATION PUBLIC KEY --');
+  if (debugMode) {
+    console.log(setupRet);
+  } else if (setupRet.success) {
+    console.log('Authorization pubkey register success.');
+  } else if (setupRet.errorCode === 0x6985) {
+    console.log('Authorization pubkey already registed.');
+  } else {
+    console.log(`Error!! error code = 0x${setupRet.errorCodeHex}`);
+  }
   await liquidLib.disconnect();
 }
 
