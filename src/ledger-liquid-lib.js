@@ -1178,7 +1178,8 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
         for (const utxo of utxoList) {
           if ((txin.txid === utxo.txid) && (txin.vout === utxo.vout)) {
             let value = 0;
-            if ('valueCommitment' in utxo) {
+            if (('valueCommitment' in utxo) && (utxo.valueCommitment) &&
+                ((utxo.valueCommitment.length === 66) || (utxo.valueCommitment.length === 18))) {
               value = utxo.valueCommitment;
             } else if ('amount' in utxo) {
               value = utxo.amount;
