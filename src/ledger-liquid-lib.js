@@ -1181,8 +1181,10 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
             if (('valueCommitment' in utxo) && (utxo.valueCommitment) &&
                 ((utxo.valueCommitment.length === 66) || (utxo.valueCommitment.length === 18))) {
               value = utxo.valueCommitment;
-            } else if ('amount' in utxo) {
+            } else if (('amount' in utxo) && (utxo.amount)) {
               value = utxo.amount;
+            } else {
+              throw new Error('invalid amount or valueCommitment.');
             }
             amountValueList.push(value);
             isFind = true;
