@@ -1179,10 +1179,13 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
           if ((txin.txid === utxo.txid) && (txin.vout === utxo.vout)) {
             let value = 0;
             if (('valueCommitment' in utxo) && (utxo.valueCommitment) &&
-                ((utxo.valueCommitment.length === 66) || (utxo.valueCommitment.length === 18))) {
+                ((utxo.valueCommitment.length === 66) ||
+                (utxo.valueCommitment.length === 18))) {
               value = utxo.valueCommitment;
-            } else if ('amount' in utxo) {
+            } else if (('amount' in utxo) && (utxo.amount)) {
               value = utxo.amount;
+            } else {
+              throw new Error('invalid amount or valueCommitment.');
             }
             amountValueList.push(value);
             isFind = true;
@@ -1226,6 +1229,10 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
           if (('scripts' in desc) && (desc.scripts.length > 0) &&
               ('redeemScript' in desc.scripts[desc.scripts.length - 1])) {
             redeemScript = desc.scripts[desc.scripts.length - 1].redeemScript;
+          } else if (('scripts' in desc) && (desc.scripts.length > 0) &&
+              ('key' in desc.scripts[desc.scripts.length - 1])) {
+            const descPubkey = desc.scripts[desc.scripts.length - 1].key;
+            redeemScript = this.getPublicKeyRedeemScript(descPubkey);
           }
         }
 

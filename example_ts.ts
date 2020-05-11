@@ -264,11 +264,14 @@ async function execSign(liquidLib: LedgerLiquidWrapper, txHex: string,
 
     console.log('*** walletUtxoList ***', signUtxoList);
     console.log('*** getSignature start. ***');
+    const startTime = Date.now();
     sigRet = await liquidLib.getSignature(txHex,
         signUtxoList, authDerSig);
+    const endTime = Date.now();
     console.log(`*** getSignature end. ***`,
         JSON.stringify(sigRet, (key, value) =>
             typeof value === 'bigint' ? value.toString() : value, '  '));
+    console.log(`getSignature: ${(endTime - startTime)} msec`);
     if (!sigRet.success && continousCount) {
       throw new Error('getSignature fail.');
     }
