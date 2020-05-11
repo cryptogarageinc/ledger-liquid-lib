@@ -9,7 +9,9 @@ function convertErrorCode(buf) {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function debugSendLog(funcName, buffer) {
-  // console.log(funcName, buffer.toString('hex'));
+  const date = new Date();
+  console.log(`[${date.getHours()}:${date.getMinutes()}:${date.getSeconds()}]`,
+      funcName, buffer.toString('hex'));
 }
 
 function reverseBuffer(buf) {
@@ -111,6 +113,16 @@ function parseBip32Path(path, parent = false) {
     buffer: buf,
     array: array,
   };
+}
+
+function splitByteArray255(byteArray) {
+  const array = [];
+  for (let offset = 0; offset < byteArray.length; offset += 255) {
+    const maxOffset = (byteArray.length > (offset + 255)) ?
+       (offset + 255) : byteArray.length;
+    array.push(byteArray.subarray(offset, maxOffset));
+  }
+  return array;
 }
 
 // GET WALLET PUBLIC KEY
@@ -528,19 +540,30 @@ async function untrustedHashSign(transport, dectx, path, pin, sigHashType) {
 }
 
 async function sendProvideIssuanceInformationCmd(
-    transport, data, p1) {
+    transport, data) {
   const CLA = 0xe0;
   const LIQUID_PROVIDE_ISSUANCE_INFORMATION = 0xe6;
-  const apdu = Buffer.concat(
-      [Buffer.from([CLA, LIQUID_PROVIDE_ISSUANCE_INFORMATION, p1, 0]),
-        Buffer.from([data.length]), data]);
-  debugSendLog('liquidProvideIssuanceInformation send -> ', apdu);
-  const exchangeRet = await transport.exchange(apdu);
-  const result = (exchangeRet.length <= 2) ? exchangeRet :
-    exchangeRet.subarray(exchangeRet.length - 2);
-  const ecode = convertErrorCode(result);
-  if (ecode !== 0x9000) {
-    console.log('sendProvideIssuanceInformationCmd Fail. ecode =', ecode);
+  const dataArray = splitByteArray255(data);
+  let ecode = 0x9000;
+  for (const index in dataArray) {
+    if (!dataArray[index]) {
+      continue;
+    }
+    const inputData = dataArray[index];
+    // Use "==" because the value types are different.
+    const p1 = ((dataArray.length - 1) == index) ? 0x80 : 0x00;
+    const apdu = Buffer.concat(
+        [Buffer.from([CLA, LIQUID_PROVIDE_ISSUANCE_INFORMATION, p1, 0]),
+          Buffer.from([inputData.length]), inputData]);
+    debugSendLog('liquidProvideIssuanceInformation send -> ', apdu);
+    const exchangeRet = await transport.exchange(apdu);
+    const result = (exchangeRet.length <= 2) ? exchangeRet :
+      exchangeRet.subarray(exchangeRet.length - 2);
+    ecode = convertErrorCode(result);
+    if (ecode !== 0x9000) {
+      console.log('sendProvideIssuanceInformationCmd Fail. ecode =', ecode);
+      break;
+    }
   }
   return ecode;
 }
@@ -554,15 +577,14 @@ async function liquidProvideIssuanceInformation(transport, dectx) {
     }
   }
 
-  let ecode;
   let data;
   if (!isFind) {
     data = Buffer.alloc(dectx.vin.length);
-    return await sendProvideIssuanceInformationCmd(transport, data, 0x80);
+    return await sendProvideIssuanceInformationCmd(transport, data);
   }
 
+  let allData = Buffer.alloc(0);
   for (let idx = 0; idx < dectx.vin.length; ++idx) {
-    const p1 = (idx === (dectx.vin.length - 1)) ? 0x80 : 0x00;
     if ('issuance' in dectx.vin[idx]) {
       const issuance = dectx.vin[idx].issuance;
       if ('contractHash' in issuance) {
@@ -602,16 +624,13 @@ async function liquidProvideIssuanceInformation(transport, dectx) {
       } else {
         data = Buffer.concat([data, Buffer.alloc(1)]);
       }
-      ecode = await sendProvideIssuanceInformationCmd(transport, data, p1);
+      allData = Buffer.concat([allData, data]);
     } else {
       data = Buffer.alloc(1);
-      ecode = await sendProvideIssuanceInformationCmd(transport, data, p1);
-    }
-    if (ecode !== 0x9000) {
-      break;
+      allData = Buffer.concat([allData, data]);
     }
   }
-  return ecode;
+  return await sendProvideIssuanceInformationCmd(transport, allData);
 }
 
 const disconnectEcode = 0x6d00; // INS_NOT_SUPPORTED
