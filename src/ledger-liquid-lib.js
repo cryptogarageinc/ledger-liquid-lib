@@ -1327,6 +1327,10 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
           if (('scripts' in desc) && (desc.scripts.length > 0) &&
               ('redeemScript' in desc.scripts[desc.scripts.length - 1])) {
             redeemScript = desc.scripts[desc.scripts.length - 1].redeemScript;
+          } else if (('scripts' in desc) && (desc.scripts.length > 0) &&
+              ('key' in desc.scripts[desc.scripts.length - 1])) {
+            const descPubkey = desc.scripts[desc.scripts.length - 1].key;
+            redeemScript = this.getPublicKeyRedeemScript(descPubkey);
           }
         }
 
