@@ -279,17 +279,35 @@ async function liquidSetupHeadless(transport, authorizationPublicKeyHex) {
 
 async function sendHashInputStartCmd(transport, p1, p2, data) {
   // FIXME split send.
+  console.log('call sendHashInputStartCmd');
   const CLA = 0xe0;
   const HASH_INPUT_START = 0x44;
-  const apdu = Buffer.concat([Buffer.from([CLA, HASH_INPUT_START, p1, p2]),
-    Buffer.from([data.length]), data]);
-  debugSendLog('sendHashInputStartCmd send -> ', apdu);
-  const exchangeRet = await transport.exchange(apdu);
-  const result = (exchangeRet.length <= 2) ? exchangeRet :
-    exchangeRet.subarray(exchangeRet.length - 2);
-  const resultData = (exchangeRet.length <= 2) ? Buffer.alloc(0) :
-    exchangeRet.subarray(0, exchangeRet.length - 2);
-  return {data: resultData, errorCode: convertErrorCode(result)};
+  const dataArray = splitByteArray255(data);
+  let ecode = 0x9000;
+  let resultData = Buffer.alloc(0);
+  for (const index in dataArray) {
+    if (!dataArray[index]) {
+      continue;
+    }
+    const inputData = dataArray[index];
+    // Use "==" because the value types are different.
+    const p1v = (p1 == 0 && index == 0) ? 0x00 : 0x80;
+    const apdu = Buffer.concat(
+        [Buffer.from([CLA, HASH_INPUT_START, p1v, p2]),
+          Buffer.from([inputData.length]), inputData]);
+    debugSendLog('sendHashInputStartCmd send -> ', apdu);
+    const exchangeRet = await transport.exchange(apdu);
+    const result = (exchangeRet.length <= 2) ? exchangeRet :
+      exchangeRet.subarray(exchangeRet.length - 2);
+    resultData = (exchangeRet.length <= 2) ? Buffer.alloc(0) :
+      exchangeRet.subarray(0, exchangeRet.length - 2);
+    ecode = convertErrorCode(result);
+    if (ecode !== 0x9000) {
+      console.log('sendHashInputStartCmd Fail. ecode =', ecode);
+      break;
+    }
+  }
+  return {data: resultData, errorCode: ecode};
 }
 
 async function sendHashInputFinalizeFullCmd(transport, p1, p2, data) {
@@ -343,13 +361,18 @@ async function startUntrustedTransaction(transport, dectx, isContinue,
   version.writeUInt32LE(dectx.version, 0);
   const inputNum = (inputIndex === -1) ? dectx.vin.length : 1;
   let apdu = Buffer.concat([version, getVarIntBuffer([inputNum])]);
-  let errData = await sendHashInputStartCmd(transport, p1, p2, apdu);
-  if (errData.errorCode != 0x9000) {
-    console.log('fail sendHashInputStartCmd', errData);
-    return errData.errorCode;
+  let apduAll = apdu;
+  let errData;
+  if (isContinue) {
+    errData = await sendHashInputStartCmd(transport, p1, p2, apdu);
+    if (errData.errorCode != 0x9000) {
+      console.log('fail sendHashInputStartCmd', errData);
+      return errData.errorCode;
+    }
+    p1 = 0x80;
+    apduAll = Buffer.alloc(0);
   }
 
-  p1 = 0x80;
   // p2 = 0x00;
   for (let idx = 0; idx < dectx.vin.length; ++idx) {
     if ((inputIndex !== -1) && (idx !== inputIndex)) {
@@ -374,24 +397,61 @@ async function startUntrustedTransaction(transport, dectx, isContinue,
     sequence.writeUInt32LE(dectx.vin[idx].sequence, 0);
     apdu = Buffer.concat([header, txid, vout, value,
       getVarIntBuffer(script.length)]);
+    if (apduAll.length + apdu.length > 255) {
+      errData = await sendHashInputStartCmd(transport, p1, p2, apduAll);
+      if (errData.errorCode != 0x9000) {
+        console.log('fail sendHashInputStartCmd2', errData);
+        break;
+      }
+      p1 = 0x80;
+      apduAll = Buffer.alloc(0);
+    }
+    apduAll = Buffer.concat([apduAll, apdu]);
+    /*
     errData = await sendHashInputStartCmd(transport, p1, p2, apdu);
     if (errData.errorCode != 0x9000) {
       console.log('fail sendHashInputStartCmd2', errData);
       break;
     }
+    */
     if (script.length !== 0) {
       apdu = Buffer.concat([script, sequence]);
+      if (isContinue || (apduAll.length + apdu.length > 255)) {
+        errData = await sendHashInputStartCmd(transport, p1, p2, apduAll);
+        if (errData.errorCode != 0x9000) {
+          console.log('fail sendHashInputStartCmd2', errData);
+          break;
+        }
+        p1 = 0x80;
+        apduAll = Buffer.alloc(0);
+      }
+      apduAll = Buffer.concat([apduAll, apdu]);
+      /*
       errData = await sendHashInputStartCmd(transport, p1, p2, apdu);
       if (errData.errorCode != 0x9000) {
         console.log('fail sendHashInputStartCmd2', errData);
         break;
       }
+      */
     } else {
+      apdu = sequence;
+      if (isContinue || (apduAll.length + apdu.length > 255)) {
+        errData = await sendHashInputStartCmd(transport, p1, p2, apduAll);
+        if (errData.errorCode != 0x9000) {
+          console.log('fail sendHashInputStartCmd2', errData);
+          break;
+        }
+        p1 = 0x80;
+        apduAll = Buffer.alloc(0);
+      }
+      apduAll = Buffer.concat([apduAll, apdu]);
+      /*
       errData = await sendHashInputStartCmd(transport, p1, p2, sequence);
       if (errData.errorCode != 0x9000) {
         console.log('fail sendHashInputStartCmd2', errData);
         break;
       }
+      */
     }
 
     if ((inputIndex !== -1) && ('issuance' in dectx.vin[idx])) {
@@ -434,11 +494,30 @@ async function startUntrustedTransaction(transport, dectx, isContinue,
       } else {
         data = Buffer.concat([data, Buffer.alloc(1)]);
       }
+      apdu = data;
+      if (isContinue || (apduAll.length + apdu.length > 255)) {
+        errData = await sendHashInputStartCmd(transport, p1, p2, apduAll);
+        if (errData.errorCode != 0x9000) {
+          console.log('fail sendHashInputStartCmd2', errData);
+          break;
+        }
+        p1 = 0x80;
+        apduAll = Buffer.alloc(0);
+      }
+      apduAll = Buffer.concat([apduAll, apdu]);
+      /*
       errData = await sendHashInputStartCmd(transport, p1, p2, data);
       if (errData.errorCode != 0x9000) {
         console.log('fail sendHashInputStartCmd2', errData);
         break;
       }
+      */
+    }
+  }
+  if (!errData || errData.errorCode == 0x9000) {
+    errData = await sendHashInputStartCmd(transport, p1, p2, apduAll);
+    if (errData.errorCode != 0x9000) {
+      console.log('fail sendHashInputStartCmd2', errData);
     }
   }
   return errData.errorCode;
@@ -1198,7 +1277,8 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
           if ((txin.txid === utxo.txid) && (txin.vout === utxo.vout)) {
             let value = 0;
             if (('valueCommitment' in utxo) && (utxo.valueCommitment) &&
-                ((utxo.valueCommitment.length === 66) || (utxo.valueCommitment.length === 18))) {
+                ((utxo.valueCommitment.length === 66) ||
+                (utxo.valueCommitment.length === 18))) {
               value = utxo.valueCommitment;
             } else if (('amount' in utxo) && (utxo.amount)) {
               value = utxo.amount;
