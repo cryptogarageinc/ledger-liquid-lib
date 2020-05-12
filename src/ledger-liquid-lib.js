@@ -113,6 +113,16 @@ function parseBip32Path(path, parent = false) {
   };
 }
 
+function splitByteArray255(byteArray) {
+  const array = [];
+  for (let offset = 0; offset < byteArray.length; offset += 255) {
+    const maxOffset = (byteArray.length > (offset + 255)) ?
+       (offset + 255) : byteArray.length;
+    array.push(byteArray.subarray(offset, maxOffset));
+  }
+  return array;
+}
+
 // GET WALLET PUBLIC KEY
 async function getWalletPublicKey(
     transport, path, option, parent = false) {
@@ -534,19 +544,30 @@ async function untrustedHashSign(transport, dectx, path, pin, sigHashType) {
 }
 
 async function sendProvideIssuanceInformationCmd(
-    transport, data, p1) {
+    transport, data, isFinal) {
   const CLA = 0xe0;
   const LIQUID_PROVIDE_ISSUANCE_INFORMATION = 0xe6;
-  const apdu = Buffer.concat(
-      [Buffer.from([CLA, LIQUID_PROVIDE_ISSUANCE_INFORMATION, p1, 0]),
-        Buffer.from([data.length]), data]);
-  debugSendLog('liquidProvideIssuanceInformation send -> ', apdu);
-  const exchangeRet = await transport.exchange(apdu);
-  const result = (exchangeRet.length <= 2) ? exchangeRet :
-    exchangeRet.subarray(exchangeRet.length - 2);
-  const ecode = convertErrorCode(result);
-  if (ecode !== 0x9000) {
-    console.log('sendProvideIssuanceInformationCmd Fail. ecode =', ecode);
+  const dataArray = splitByteArray255(data);
+  let ecode = 0x9000;
+  for (const index in dataArray) {
+    if (!dataArray[index]) {
+      continue;
+    }
+    const inputData = dataArray[index];
+    // Use "==" because the value types are different.
+    const p1 = (isFinal && (dataArray.length - 1) == index) ? 0x80 : 0x00;
+    const apdu = Buffer.concat(
+        [Buffer.from([CLA, LIQUID_PROVIDE_ISSUANCE_INFORMATION, p1, 0]),
+          Buffer.from([inputData.length]), inputData]);
+    debugSendLog('liquidProvideIssuanceInformation send -> ', apdu);
+    const exchangeRet = await transport.exchange(apdu);
+    const result = (exchangeRet.length <= 2) ? exchangeRet :
+      exchangeRet.subarray(exchangeRet.length - 2);
+    ecode = convertErrorCode(result);
+    if (ecode !== 0x9000) {
+      console.log('sendProvideIssuanceInformationCmd Fail. ecode =', ecode);
+      break;
+    }
   }
   return ecode;
 }
@@ -561,15 +582,17 @@ async function liquidProvideIssuanceInformation(transport, dectx,
     }
   }
 
-  let ecode;
+  let ecode = 0x9000;
   let data;
   if (!isFind) {
     data = Buffer.alloc(dectx.vin.length);
-    return await sendProvideIssuanceInformationCmd(transport, data, 0x80);
+    ecode = await sendProvideIssuanceInformationCmd(
+        transport, data, true);
+    return ecode;
   }
 
+  let allData = Buffer.alloc(0);
   for (let idx = 0; idx < dectx.vin.length; ++idx) {
-    const p1 = (idx === (dectx.vin.length - 1)) ? 0x80 : 0x00;
     if ('issuance' in dectx.vin[idx]) {
       const issuance = dectx.vin[idx].issuance;
       if ('contractHash' in issuance) {
@@ -609,15 +632,28 @@ async function liquidProvideIssuanceInformation(transport, dectx,
       } else {
         data = Buffer.concat([data, Buffer.alloc(1)]);
       }
-      ecode = await sendProvideIssuanceInformationCmd(transport, data, p1);
+      if (allData.length > 0) {
+        ecode = await sendProvideIssuanceInformationCmd(
+            transport, allData, false);
+        if (ecode !== 0x9000) {
+          break;
+        }
+        allData = Buffer.alloc(0);
+      }
+      ecode = await sendProvideIssuanceInformationCmd(
+          transport, data, (idx == dectx.vin.length - 1));
       if (countupFunction) countupFunction();
+      if (ecode !== 0x9000) {
+        break;
+      }
     } else {
       data = Buffer.alloc(1);
-      ecode = await sendProvideIssuanceInformationCmd(transport, data, p1);
+      allData = Buffer.concat([allData, data]);
     }
-    if (ecode !== 0x9000) {
-      break;
-    }
+  }
+  if ((ecode === 0x9000) && (allData.length > 0)) {
+    ecode = await sendProvideIssuanceInformationCmd(
+        transport, allData, true);
   }
   return ecode;
 }
@@ -670,6 +706,9 @@ function compressPubkey(publicKey) {
   if (!publicKey) return '';
   return cfdjs.GetCompressedPubkey({pubkey: publicKey}).pubkey;
 }
+
+const sleep = (msec) => new Promise(
+    (resolve) => setTimeout(resolve, msec));
 
 const networkTypeDefine = {
   LiquidV1: 'liquidv1',
@@ -766,10 +805,8 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
   }
 
   async connect(maxWaitTime = undefined, devicePath = undefined) {
-    const sleep = (msec) => new Promise(
-        (resolve) => setTimeout(resolve, msec));
-
-    const waitLimit = (typeof maxWaitTime === 'number') ? maxWaitTime : 0xffffffff;
+    const waitLimit = (typeof maxWaitTime === 'number') ?
+        maxWaitTime : 0xffffffff;
     const path = (typeof devicePath === 'string') ? devicePath : '';
     let transport = undefined;
     let count = (waitLimit < 1) ? 0 : 1;
@@ -1346,6 +1383,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
           if (ecode !== 0x9000) {
             break;
           }
+          // await sleep(20000);
           signatureList.push({
             utxoData: utxoData.utxo,
             signature: signatureRet.signature,
