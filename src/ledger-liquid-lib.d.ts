@@ -17,6 +17,12 @@ export enum AddressType {
   Bech32 = 'bech32',
 }
 
+export enum GetSignatureState {
+  AnalyzeUtxo = 'analyzeUtxo', // Preparation before 'input transaction'
+  InputTx = 'inputTx', // input transaction to ledger
+  GetSignature = 'getSignature', // request getSignature to ledger
+}
+
 export interface UtxoData {
   txid: string; // key(outpoint)
   vout: number; // key(outpoint)
@@ -77,6 +83,20 @@ export interface GetSignatureAddressResponse extends ResponseInfo {
 
 export interface GetDeviceListResponse extends ResponseInfo {
   deviceList: string[];
+}
+
+export interface ProgressInfo {
+  current: number;
+  total: number;
+}
+
+export interface GetSignatureProgress extends ResponseInfo {
+  currentState: GetSignatureState;
+  analyzeUtxo: ProgressInfo;
+  inputTx: ProgressInfo;
+  getSignature: ProgressInfo;
+  total: ProgressInfo;
+  lastAccessTime: number;
 }
 
 export class LedgerLiquidWrapper {
@@ -199,4 +219,11 @@ export class LedgerLiquidWrapper {
     walletUtxoList: WalletUtxoData[], // sign target utxo list.
     authorizationSignature: string, // authorization signature (from backend)
   ): Promise<GetSignatureAddressResponse>;
+
+  /**
+   * Get state and progress of getSignature.
+   *
+   * @returns GetSignatureProgress.
+   */
+  getSignatureState(): GetSignatureProgress;
 }
