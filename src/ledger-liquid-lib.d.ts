@@ -96,6 +96,7 @@ export interface GetSignatureProgress extends ResponseInfo {
   inputTx: ProgressInfo;
   getSignature: ProgressInfo;
   total: ProgressInfo;
+  lastAccessTime: number;
 }
 
 export class LedgerLiquidWrapper {
