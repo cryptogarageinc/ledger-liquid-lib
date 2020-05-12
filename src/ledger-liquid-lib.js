@@ -322,7 +322,8 @@ async function sendHashSignCmd(transport, data) {
 }
 
 async function startUntrustedTransaction(transport, dectx, isContinue,
-    amountValueList, inputIndex, targetRedeemScript) {
+    amountValueList, inputIndex, targetRedeemScript,
+    countupFunction = undefined) {
   let p1 = 0;
   const p2 = (isContinue) ? 0x80 : 0x06;
   const txinHead = 0x03;
@@ -428,11 +429,14 @@ async function startUntrustedTransaction(transport, dectx, isContinue,
         break;
       }
     }
+
+    if (countupFunction) countupFunction();
   }
   return errData.errorCode;
 }
 
-async function liquidFinalizeInputFull(transport, dectx) {
+async function liquidFinalizeInputFull(transport, dectx,
+    countupFunction = undefined) {
   let apdu = getVarIntBuffer(dectx.vout.length);
   let errData = await sendHashInputFinalizeFullCmd(transport, 0, 0, apdu);
   if (errData.errorCode != 0x9000) {
@@ -498,6 +502,8 @@ async function liquidFinalizeInputFull(transport, dectx) {
       console.log(`liquidFinalizeInputFull = `, errData.data.toString('hex'));
       break;
     }
+
+    if (countupFunction) countupFunction();
   }
   if (errData.errorCode != 0x9000) {
     console.log('liquidFinalizeInputFull ', errData);
@@ -545,7 +551,8 @@ async function sendProvideIssuanceInformationCmd(
   return ecode;
 }
 
-async function liquidProvideIssuanceInformation(transport, dectx) {
+async function liquidProvideIssuanceInformation(transport, dectx,
+    countupFunction = undefined) {
   let isFind = false;
   for (let idx = 0; idx < dectx.vin.length; ++idx) {
     if ('issuance' in dectx.vin[idx]) {
@@ -603,6 +610,7 @@ async function liquidProvideIssuanceInformation(transport, dectx) {
         data = Buffer.concat([data, Buffer.alloc(1)]);
       }
       ecode = await sendProvideIssuanceInformationCmd(transport, data, p1);
+      if (countupFunction) countupFunction();
     } else {
       data = Buffer.alloc(1);
       ecode = await sendProvideIssuanceInformationCmd(transport, data, p1);
@@ -680,6 +688,12 @@ const currentApplicationType = {
   Empty: '',
 };
 
+const getSignatureState = {
+  AnalyzeUtxo: 'analyzeUtxo',
+  InputTx: 'inputTx',
+  GetSignature: 'getSignature',
+};
+
 const ledgerLiquidWrapper = class LedgerLiquidWrapper {
   constructor(networkType, checkApplication = false) {
     this.transport = undefined;
@@ -702,6 +716,18 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     this.accessing = false;
     this.checkAppType = checkAppType;
     this.currentApplication = applicationType.Auto;
+    // getSignature's state
+    this.getSigState = {
+      utxoNum: 0,
+      txNum: 0,
+      current: {
+        state: getSignatureState.AnalyzeUtxo,
+        utxoNum: 0,
+        txNum: 0,
+        sigNum: 0,
+      },
+      lastAccessTime: 0,
+    };
   }
 
   getCurrentApplication() {
@@ -1154,6 +1180,12 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       ecode = connRet.errorCode;
       errMsg = connRet.errorMessage;
     }
+    if (ecode === 0x9000) {
+      if (!walletUtxoList || !proposalTransaction || !authorizationSignature) {
+        ecode = 0x6a80;
+        errMsg = 'Input parameter is null or empty';
+      }
+    }
     if (ecode !== 0x9000) {
       return {
         success: false,
@@ -1166,10 +1198,35 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     }
     try {
       this.accessing = true;
+      this.getSigState.current.state = getSignatureState.AnalyzeUtxo;
+      this.getSigState.utxoNum = walletUtxoList.length;
+      this.getSigState.lastAccessTime = Date.now();
 
       const dectx = cfdjs.ElementsDecodeRawTransaction({
         hex: proposalTransaction, network: this.networkType,
         mainchainNetwork: this.mainchainNetwork});
+      let issuanceNum = 0;
+      this.getSigState.txNum = 0;
+      if (dectx.vin) {
+        this.getSigState.txNum += dectx.vin.length;
+        for (let idx = 0; idx < dectx.vin.length; ++idx) {
+          if ('issuance' in dectx.vin[idx]) {
+            ++issuanceNum;
+          }
+        }
+      }
+      if (dectx.vout) this.getSigState.txNum += dectx.vout.length;
+      this.getSigState.txNum += issuanceNum;
+      this.getSigState.current.utxoNum = 0;
+      this.getSigState.current.txNum = 0;
+      this.getSigState.current.sigNum = 0;
+      const appedTxNumFunc = () => {
+        this.getSigState.current.txNum += 1;
+        this.getSigState.lastAccessTime = Date.now();
+      };
+      const updateAccessTimeFunc = () => {
+        this.getSigState.lastAccessTime = Date.now();
+      };
 
       const amountValueList = [];
       const utxoList = walletUtxoList;
@@ -1253,27 +1310,33 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
           targetIndex: targetIndex,
           utxo: utxo,
         });
+        this.getSigState.current.utxoNum += 1;
+        this.getSigState.lastAccessTime = Date.now();
       }
 
       // console.info('amountValueList =', amountValueList);
       if (ecode === 0x9000) {
+        this.getSigState.current.state = getSignatureState.InputTx;
         ecode = await startUntrustedTransaction(this.transport, dectx, false,
-            amountValueList, -1, '');
+            amountValueList, -1, '', appedTxNumFunc);
       }
       if (ecode === 0x9000) {
-        ecode = await liquidFinalizeInputFull(this.transport, dectx);
+        ecode = await liquidFinalizeInputFull(
+            this.transport, dectx, appedTxNumFunc);
       }
       if (ecode === 0x9000) {
-        ecode = await liquidProvideIssuanceInformation(this.transport, dectx);
+        ecode = await liquidProvideIssuanceInformation(
+            this.transport, dectx, appedTxNumFunc);
       }
 
       if (ecode === 0x9000) {
+        this.getSigState.current.state = getSignatureState.GetSignature;
         // sighashtype: 1=all only
         const sighashtype = 1;
         for (const utxoData of utxoScriptList) {
           ecode = await startUntrustedTransaction(this.transport, dectx,
               true, amountValueList, utxoData.targetIndex,
-              utxoData.redeemScript);
+              utxoData.redeemScript, updateAccessTimeFunc);
           if (ecode !== 0x9000) {
             break;
           }
@@ -1287,6 +1350,8 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
             utxoData: utxoData.utxo,
             signature: signatureRet.signature,
           });
+          this.getSigState.current.sigNum += 1;
+          this.getSigState.lastAccessTime = Date.now();
         }
       }
       errMsg = (ecode === 0x9000) ? '' : 'other error.';
@@ -1298,6 +1363,11 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       errMsg = e.toString();
     } finally {
       this.accessing = false;
+      this.getSigState.utxoNum = 0;
+      this.getSigState.txNum = 0;
+      this.getSigState.current.state = getSignatureState.AnalyzeUtxo;
+      this.getSigState.current.utxoNum = 0;
+      this.getSigState.current.txNum = 0;
     }
 
     return {
@@ -1308,6 +1378,51 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       disconnect: false,
       signatureList: signatureList,
     };
+  }
+
+  getSignatureState() {
+    const timeout = 15 * 1000;
+    const result = {
+      success: true,
+      errorCode: 0x9000,
+      errorCodeHex: '',
+      errorMessage: '',
+      disconnect: false,
+      currentState: getSignatureState.AnalyzeUtxo,
+      analyzeUtxo: {current: 0, total: 0},
+      inputTx: {current: 0, total: 0},
+      getSignature: {current: 0, total: 0},
+      total: {current: 0, total: 0},
+      lastAccessTime: this.getSigState.lastAccessTime,
+    };
+    if (this.transport === undefined) {
+      result.errorCode = disconnectEcode;
+      result.disconnect = true;
+      result.errorMessage = 'connection fail.';
+    } else if (!this.accessing || (this.getSigState.utxoNum === 0)) {
+      result.errorMessage = 'not execute.';
+    } else {
+      result.currentState = this.getSigState.current.state;
+      result.analyzeUtxo.current = this.getSigState.current.utxoNum;
+      result.analyzeUtxo.total = this.getSigState.utxoNum;
+      result.inputTx.current = this.getSigState.current.txNum;
+      result.inputTx.total = this.getSigState.txNum;
+      result.getSignature.current = this.getSigState.current.sigNum;
+      result.getSignature.total = this.getSigState.utxoNum;
+      result.total.current = result.analyzeUtxo.current +
+        result.inputTx.current + result.getSignature.current;
+      result.total.total = result.analyzeUtxo.total + result.inputTx.total +
+        result.getSignature.total;
+      result.lastAccessTime = this.getSigState.lastAccessTime;
+      if (this.getSigState.lastAccessTime + timeout <= Date.now()) {
+        result.errorCode = 0x6000;
+        result.errorMessage = 'ledger call timeout';
+      }
+    }
+
+    result.success = (result.errorCode === 0x9000);
+    result.errorCodeHex = result.errorCode.toString(16);
+    return result;
   }
 };
 
@@ -1326,3 +1441,7 @@ module.exports.AddressType = addressType;
 module.exports.AddressType.Legacy = addressType.Legacy;
 module.exports.AddressType.P2shSegwit = addressType.P2shSegwit;
 module.exports.AddressType.Bech32 = addressType.Bech32;
+module.exports.GetSignatureState = getSignatureState;
+module.exports.GetSignatureState.AnalyzeUtxo = getSignatureState.AnalyzeUtxo;
+module.exports.GetSignatureState.InputTx = getSignatureState.InputTx;
+module.exports.GetSignatureState.GetSignature = getSignatureState.GetSignature;

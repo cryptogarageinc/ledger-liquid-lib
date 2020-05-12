@@ -1,6 +1,6 @@
 /* eslint-disable require-jsdoc */
 import * as cfdjs from 'cfd-js';
-import {LedgerLiquidWrapper, WalletUtxoData, SignatureData, NetworkType, AddressType} from './src/ledger-liquid-lib';
+import {LedgerLiquidWrapper, WalletUtxoData, SignatureData, NetworkType, AddressType, GetSignatureState, ProgressInfo} from './src/ledger-liquid-lib';
 
 process.on('unhandledRejection', console.dir);
 
@@ -617,6 +617,62 @@ async function checkConnecting(lib: LedgerLiquidWrapper) {
     setTimeout(async () => {
       await checkConnecting(lib);
     }, 1000);
+  }
+}
+
+let isDumpSignature = false;
+let lastState = '';
+let pastAccessTime = 0;
+async function dumpSignatureProgress(lib: LedgerLiquidWrapper) {
+  const result = lib.getSignatureState();
+  const cur = new Date();
+  const hour = (cur.getHours() > 9) ? cur.getHours() : ('0' + cur.getHours());
+  const min = (cur.getMinutes() > 9) ? cur.getMinutes() : ('0' + cur.getMinutes());
+  const sec = (cur.getSeconds() > 9) ? cur.getSeconds() : ('0' + cur.getSeconds());
+  const msec = (cur.getMilliseconds() > 99) ? cur.getMilliseconds() :
+      (cur.getMilliseconds() > 9) ? ('0' + cur.getMilliseconds()) :
+          ('00' + cur.getMilliseconds());
+  const timeStr = `[${hour}:${min}:${sec}.${msec}]`;
+  if (result.success) {
+    let prog: ProgressInfo = {current: 0, total: 0};
+    switch (result.currentState) {
+      case GetSignatureState.AnalyzeUtxo:
+        prog = result.analyzeUtxo;
+        break;
+      case GetSignatureState.InputTx:
+        prog = result.inputTx;
+        break;
+      case GetSignatureState.GetSignature:
+        prog = result.getSignature;
+        break;
+      default:
+        break;
+    }
+    if (result.errorMessage === 'not execute.') {
+      if (lastState !== result.errorMessage) {
+        console.log(`${timeStr} getSignatureState:`, result);
+        lastState = result.errorMessage;
+      }
+    } else {
+      const state = `${result.currentState}: ${prog.current}/${prog.total}`;
+      if (lastState !== state) {
+        console.log(`${timeStr} getSignatureState(${state})`);
+      } else if (pastAccessTime !== result.lastAccessTime) {
+        console.log(`${timeStr} getSignatureState(${state}): time[${result.lastAccessTime}]`);
+      }
+      lastState = state;
+      pastAccessTime = result.lastAccessTime;
+    }
+  } else if (!isDumpSignature) {
+    console.log(`${timeStr} getSignatureState:`, result);
+  } else if (lastState !== result.errorMessage) {
+    console.log(`${timeStr} getSignatureState:`, result);
+    lastState = result.errorMessage;
+  }
+  if (isDumpSignature) {
+    setTimeout(async () => {
+      await dumpSignatureProgress(lib);
+    }, 500);
   }
 }
 
@@ -1468,6 +1524,12 @@ async function example() {
     return;
   }
   if (!directMnemonic) {
+    if (debugMode) {
+      isDumpSignature = true;
+      setTimeout(async () => {
+        await dumpSignatureProgress(liquidLib);
+      }, 500);
+    }
     if (asyncConnectCheck) {
       isConnectCheck = true;
       setTimeout(async () => {
@@ -1488,6 +1550,7 @@ async function example() {
       console.log('*** Signed Tx ***\n', JSON.stringify(decSignedTx, null, '  '));
     }
     isConnectCheck = false;
+    isDumpSignature = false;
     if (asyncConnectCheck) {
       const accessing = liquidLib.isAccessing();
       console.log(`accessing: ${accessing}`);
