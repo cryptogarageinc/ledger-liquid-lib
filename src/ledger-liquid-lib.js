@@ -755,6 +755,8 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     this.accessing = false;
     this.checkAppType = checkAppType;
     this.currentApplication = applicationType.Auto;
+    this.currentDevicePath = '';
+    this.lastConnectTime = 0;
     // getSignature's state
     this.getSigState = {
       utxoNum: 0,
@@ -777,6 +779,13 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     } else {
       return currentApplicationType.Empty;
     }
+  }
+
+  getLastConnectionInfo() {
+    return {
+      currentDevicePath: this.currentDevicePath,
+      lastConnectTime: this.lastConnectTime,
+    };
   }
 
   async getDeviceList() {
@@ -844,6 +853,13 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
             if (ecode === 0x9000) {
               this.transport = transport;
               this.currentApplication = ret.application;
+              if (!path) {
+                const devList = await TransportNodeHid.list();
+                this.currentDevicePath = (!devList) ? '' : devList[0];
+              } else {
+                this.currentDevicePath = path;
+              }
+              this.lastConnectTime = Date.now();
               break;
             } else if (ecode !== disconnectEcode) {
               console.log('illegal error. ', ecode);
@@ -968,6 +984,8 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       } finally {
         this.currentApplication = applicationType.Auto;
         this.accessing = false;
+        this.currentDevicePath = '';
+        this.lastConnectTime = 0;
       }
     }
   }

@@ -51,6 +51,11 @@ export interface ResponseInfo {
   disconnect: boolean;
 }
 
+export interface ConnectionInfo {
+  currentDevicePath: string;
+  lastConnectTime: number;
+}
+
 export interface GetApplicationInfoResponse extends ResponseInfo {
   name: string;
   flag: number;
@@ -113,6 +118,16 @@ export class LedgerLiquidWrapper {
    * @return ApplicationType
    */
   getCurrentApplication(): ApplicationType;
+
+  /**
+   * Get last connection information.
+   *
+   * attention: using after connect or isConnected.
+   * current API is only get last connection info.
+   *
+   * @return ConnectionInfo.
+   */
+  getLastConnectionInfo(): ConnectionInfo;
 
   /**
    * get usb device list.
