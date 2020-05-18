@@ -95,6 +95,13 @@ export interface ProgressInfo {
   total: number;
 }
 
+export interface CalculateSignatureProgress extends ResponseInfo {
+  analyzeUtxo: ProgressInfo;
+  inputTx: ProgressInfo;
+  getSignature: ProgressInfo;
+  total: ProgressInfo;
+}
+
 export interface GetSignatureProgress extends ResponseInfo {
   currentState: GetSignatureState;
   analyzeUtxo: ProgressInfo;
@@ -210,7 +217,7 @@ export class LedgerLiquidWrapper {
    */
   getXpubKey(bip32Path: string): Promise<GetXpubKeyResponse>;
 
-  /*
+  /**
    * Get address with ledger wallet.
    *
    * @param bip32Path bip32 path.
@@ -226,7 +233,6 @@ export class LedgerLiquidWrapper {
    * @param proposalTransaction         proposal transaction.
    * @param walletUtxoList              sign target utxo list.
    * @param authorizationSignature      authorization signature (from backend).
-   * @param sigHashType                 signature hash type.
    * @returns GetSignatureAddressResponse wrapped promise.
    */
   getSignature(
@@ -241,4 +247,16 @@ export class LedgerLiquidWrapper {
    * @returns GetSignatureProgress.
    */
   getSignatureState(): GetSignatureProgress;
+
+  /**
+   * Calculate getSignature progress.
+   *
+   * @param proposalTransaction         proposal transaction.
+   * @param walletUtxoList              sign target utxo list.
+   * @returns CalculateSignatureProgress
+   */
+  calcSignatureProgress(
+    proposalTransaction: string, // proposal transaction.
+    walletUtxoList: WalletUtxoData[], // sign target utxo list.
+  ): CalculateSignatureProgress;
 }

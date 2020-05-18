@@ -658,6 +658,25 @@ async function liquidProvideIssuanceInformation(transport, dectx,
   return ecode;
 }
 
+function calculateGetSignatureProgress(dectx, utxoListLength) {
+  let txNum = 0;
+  let issuanceNum = 0;
+  if (dectx.vin) {
+    txNum += dectx.vin.length;
+    for (let idx = 0; idx < dectx.vin.length; ++idx) {
+      if ('issuance' in dectx.vin[idx]) {
+        ++issuanceNum;
+      }
+    }
+  }
+  if (dectx.vout) txNum += dectx.vout.length;
+  txNum += issuanceNum;
+  return {
+    utxoNum: utxoListLength,
+    txNum: txNum,
+  };
+}
+
 const disconnectEcode = 0x6d00; // INS_NOT_SUPPORTED
 const accessingEcode = 0x9999;
 const accessingMsg = 'accessing other command';
@@ -1254,24 +1273,15 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     try {
       this.accessing = true;
       this.getSigState.current.state = getSignatureState.AnalyzeUtxo;
-      this.getSigState.utxoNum = walletUtxoList.length;
       this.getSigState.lastAccessTime = Date.now();
 
       const dectx = cfdjs.ElementsDecodeRawTransaction({
         hex: proposalTransaction, network: this.networkType,
         mainchainNetwork: this.mainchainNetwork});
-      let issuanceNum = 0;
-      this.getSigState.txNum = 0;
-      if (dectx.vin) {
-        this.getSigState.txNum += dectx.vin.length;
-        for (let idx = 0; idx < dectx.vin.length; ++idx) {
-          if ('issuance' in dectx.vin[idx]) {
-            ++issuanceNum;
-          }
-        }
-      }
-      if (dectx.vout) this.getSigState.txNum += dectx.vout.length;
-      this.getSigState.txNum += issuanceNum;
+      const calcInfo = calculateGetSignatureProgress(
+          dectx, walletUtxoList.length);
+      this.getSigState.utxoNum = calcInfo.utxoNum;
+      this.getSigState.txNum = calcInfo.txNum;
       this.getSigState.current.utxoNum = 0;
       this.getSigState.current.txNum = 0;
       this.getSigState.current.sigNum = 0;
@@ -1467,8 +1477,8 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       result.getSignature.total = this.getSigState.utxoNum;
       result.total.current = result.analyzeUtxo.current +
         result.inputTx.current + result.getSignature.current;
-      result.total.total = result.analyzeUtxo.total + result.inputTx.total +
-        result.getSignature.total;
+      result.total.total = result.analyzeUtxo.total +
+        result.inputTx.total + result.getSignature.total;
       result.lastAccessTime = this.getSigState.lastAccessTime;
       if (this.getSigState.lastAccessTime + timeout <= Date.now()) {
         result.errorCode = 0x6000;
@@ -1479,6 +1489,43 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     result.success = (result.errorCode === 0x9000);
     result.errorCodeHex = result.errorCode.toString(16);
     return result;
+  }
+
+  calcSignatureProgress(proposalTransaction, walletUtxoList) {
+    let analyzeUtxoNum = 0;
+    let inputTxNum = 0;
+    let getSignatureNum = 0;
+    let ecode = 0x9000;
+    let errMsg = '';
+    try {
+      if (!walletUtxoList || !proposalTransaction) {
+        ecode = 0x6a80;
+        errMsg = 'Input parameter is null or empty';
+      } else {
+        const dectx = cfdjs.ElementsDecodeRawTransaction({
+          hex: proposalTransaction, network: this.networkType,
+          mainchainNetwork: this.mainchainNetwork});
+        const ret = calculateGetSignatureProgress(dectx, walletUtxoList.length);
+        analyzeUtxoNum = ret.utxoNum;
+        inputTxNum = ret.txNum;
+        getSignatureNum = analyzeUtxoNum;
+      }
+    } catch (e) {
+      console.log(e);
+      ecode = 0x8000;
+      errMsg = e.toString();
+    }
+    return {
+      success: (ecode === 0x9000),
+      errorCode: ecode,
+      errorCodeHex: ecode.toString(16),
+      errorMessage: errMsg,
+      disconnect: false,
+      analyzeUtxo: {current: 0, total: analyzeUtxoNum},
+      inputTx: {current: 0, total: inputTxNum},
+      getSignature: {current: 0, total: getSignatureNum},
+      total: {current: 0, total: analyzeUtxoNum + inputTxNum + getSignatureNum},
+    };
   }
 };
 

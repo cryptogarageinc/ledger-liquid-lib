@@ -1544,6 +1544,14 @@ async function example() {
         await multiAccessTest(liquidLib);
       }, 5000);
     }
+    const calcInfo = liquidLib.calcSignatureProgress(
+        blindTx2.hex, walletUtxoList);
+    if (calcInfo.success) {
+      console.log(`sign utxo count = ${calcInfo.analyzeUtxo.total}`);
+      console.log(`tx in/out/issuance count = ${calcInfo.inputTx.total}`);
+    } else {
+      console.log('calcSignatureProgress:', calcInfo);
+    }
     const txHex = await execSign(liquidLib, blindTx2.hex, walletUtxoList, '');
     console.log('*** signed tx hex ***\n', txHex);
     if (dumpTx) {
