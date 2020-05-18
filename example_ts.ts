@@ -620,6 +620,23 @@ async function checkConnecting(lib: LedgerLiquidWrapper) {
   }
 }
 
+async function checkConnectingQuick(lib: LedgerLiquidWrapper) {
+  if (isConnectCheck) {
+    const connCheckRet = await lib.isConnected();
+    const accessing = lib.isAccessing();
+    if (connCheckRet.success) {
+      console.log(`isConnected : connect, accessing=${accessing}`);
+    } else if (connCheckRet.disconnect) {
+      console.log(`isConnected : disconnect, accessing=${accessing}`);
+    } else {
+      console.log('isConnected fail: ', connCheckRet);
+    }
+    setTimeout(async () => {
+      await checkConnectingQuick(lib);
+    }, 200);
+  }
+}
+
 let isDumpSignature = false;
 let lastState = '';
 let pastAccessTime = 0;
@@ -727,6 +744,24 @@ async function execConnectionTest() {
   if (!connRet.success) {
     console.log('connection fail.(1)', connRet);
     return;
+  }
+  if (asyncConnectCheck) {
+    isConnectCheck = true;
+    setTimeout(async () => {
+      await checkConnectingQuick(liquidLib);
+    }, 200);
+    setTimeout(async () => {
+      await checkConnectingQuick(liquidLib);
+    }, 200);
+    setTimeout(async () => {
+      await checkConnectingQuick(liquidLib);
+    }, 200);
+    setTimeout(async () => {
+      await checkConnectingQuick(liquidLib);
+    }, 200);
+    setTimeout(async () => {
+      await checkConnectingQuick(liquidLib);
+    }, 200);
   }
   console.log('current application:', liquidLib.getCurrentApplication());
   console.log('last connect info  :', liquidLib.getLastConnectionInfo());

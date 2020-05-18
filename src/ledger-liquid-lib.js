@@ -772,10 +772,12 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
         'regtest' : 'mainnet';
     this.waitForConnecting = false;
     this.accessing = false;
+    this.connectAccessing = false;
     this.checkAppType = checkAppType;
     this.currentApplication = applicationType.Auto;
     this.currentDevicePath = '';
     this.lastConnectTime = 0;
+    this.lastConnectCheckTime = 0;
     // getSignature's state
     this.getSigState = {
       utxoNum: 0,
@@ -872,6 +874,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
             if (ecode === 0x9000) {
               this.transport = transport;
               this.currentApplication = ret.application;
+              this.lastConnectCheckTime = Date.now();
               if (!path) {
                 const devList = await TransportNodeHid.list();
                 this.currentDevicePath = (!devList) ? '' : devList[0];
@@ -947,14 +950,35 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
   async isConnected() {
     let ecode = disconnectEcode;
     let errMsg = 'other error';
-    if (this.isAccessing()) {
-      // The connection with Ledger is valid because it is being accessed.
-      ecode = 0x9000;
-    } else if (this.transport !== undefined) {
+
+    if (this.accessing && this.connectAccessing) {
+      console.log('sleep start.');
+      sleep(200);
+      console.log('sleep end.');
+    }
+
+    if (this.transport === undefined) {
+      // disconnected
+    } else if (this.isAccessing()) {
+      const curTime = Date.now();
+      if (this.connectAccessing && (this.lastConnectCheckTime < curTime) &&
+          ((curTime - this.lastConnectCheckTime) > 500)) {
+        // disconnect or during connecting check.
+      } else {
+        // The connection with Ledger is valid because it is being accessed.
+        ecode = 0x9000;
+      }
+    } else {
       try {
+        this.connectAccessing = true;
         this.accessing = true;
-        const ret = await checkConnect(this.transport, this.checkAppType);
-        ecode = ret.errorCode;
+        if (this.transport !== undefined) {
+          const ret = await checkConnect(this.transport, this.checkAppType);
+          ecode = ret.errorCode;
+          if (ecode === 0x9000) {
+            this.lastConnectCheckTime = Date.now();
+          }
+        }
       } catch (e) {
         const errText = e.toString();
         if (errText.indexOf('DisconnectedDevice: Cannot write to HID device') >= 0) {
@@ -974,6 +998,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
         }
       } finally {
         this.accessing = false;
+        this.connectAccessing = false;
       }
       if (ecode !== 0x9000) await this.disconnect();
     }
@@ -996,8 +1021,9 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     if (this.transport !== undefined) {
       try {
         this.accessing = true;
-        await this.close(this.transport);
+        const transport = this.transport;
         this.transport = undefined;
+        await this.close(transport);
       } catch (e) {
         console.log(e);
       } finally {
