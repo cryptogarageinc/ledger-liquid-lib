@@ -19,8 +19,8 @@
   "module": "index.js",
   "types": "./src/ledger-liquid-lib.d.ts",
   "dependencies": {
-    "@types/node": "^13.7.0",
     "@ledgerhq/hw-transport-node-hid": "^5.11.0",
+    "@types/node": "^13.13.12",
     "big-integer": "^1.6.26",
     "cfd-js": "cryptogarageinc/cfd-js#semver:^0.1.6"
   },
