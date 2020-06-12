@@ -1,6 +1,6 @@
 {
   "name": "ledger-liquid-lib",
-  "version": "0.0.22",
+  "version": "0.0.23",
   "description": "Ledger Hardware Wallet Liquid Wrapper Library",
   "keywords": [
     "Ledger",
@@ -22,7 +22,7 @@
     "@types/node": "^13.7.0",
     "@ledgerhq/hw-transport-node-hid": "^5.11.0",
     "big-integer": "^1.6.26",
-    "cfd-js": "cryptogarageinc/cfd-js#semver:^0.1.5"
+    "cfd-js": "cryptogarageinc/cfd-js#semver:^0.1.6"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^2.23.0",
