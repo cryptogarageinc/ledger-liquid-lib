@@ -1759,6 +1759,7 @@ async function execFixedTest() {
   signUtxoList[1].descriptor = desc;
 
   await execSign(liquidLib, txHex0, signUtxoList0, '', true);
+  console.log('signUtxoList:', signUtxoList);
   const tx = await execSign(liquidLib, txHex, signUtxoList, '');
   console.log('*** signed tx hex ***\n', tx);
   if (dumpTx && tx) {

@@ -297,7 +297,7 @@ async function sendHashInputStartCmd(transport, p1, p2, data) {
       exchangeRet.subarray(0, exchangeRet.length - 2);
     ecode = convertErrorCode(result);
     if (ecode !== 0x9000) {
-      console.log('sendProvideIssuanceInformationCmd Fail. ecode =', ecode);
+      console.log('sendHashInputStartCmd Fail. ecode =', ecode);
       break;
     }
   }
