@@ -276,22 +276,36 @@ async function liquidSetupHeadless(transport, authorizationPublicKeyHex) {
 }
 
 async function sendHashInputStartCmd(transport, p1, p2, data) {
-  // FIXME split send.
   const CLA = 0xe0;
   const HASH_INPUT_START = 0x44;
-  const apdu = Buffer.concat([Buffer.from([CLA, HASH_INPUT_START, p1, p2]),
-    Buffer.from([data.length]), data]);
-  debugSendLog('sendHashInputStartCmd send -> ', apdu);
-  const exchangeRet = await transport.exchange(apdu);
-  const result = (exchangeRet.length <= 2) ? exchangeRet :
-    exchangeRet.subarray(exchangeRet.length - 2);
-  const resultData = (exchangeRet.length <= 2) ? Buffer.alloc(0) :
-    exchangeRet.subarray(0, exchangeRet.length - 2);
-  return {data: resultData, errorCode: convertErrorCode(result)};
+  const dataArray = splitByteArray255(data);
+  let ecode = 0x9000;
+  let resultData = Buffer.alloc(0);
+  for (const index in dataArray) {
+    if (!dataArray[index]) {
+      continue;
+    }
+    const inputData = dataArray[index];
+    // Use "==" because the value types are different.
+    const apdu = Buffer.concat([Buffer.from([CLA, HASH_INPUT_START, p1, p2]),
+      Buffer.from([inputData.length]), inputData]);
+    debugSendLog('sendHashInputStartCmd send -> ', apdu);
+    const exchangeRet = await transport.exchange(apdu);
+    const result = (exchangeRet.length <= 2) ? exchangeRet :
+      exchangeRet.subarray(exchangeRet.length - 2);
+    resultData = (exchangeRet.length <= 2) ? Buffer.alloc(0) :
+      exchangeRet.subarray(0, exchangeRet.length - 2);
+    ecode = convertErrorCode(result);
+    if (ecode !== 0x9000) {
+      console.log('sendProvideIssuanceInformationCmd Fail. ecode =', ecode);
+      break;
+    }
+  }
+  return {data: resultData, errorCode: ecode};
 }
 
 async function sendHashInputFinalizeFullCmd(transport, p1, p2, data) {
-  // FIXME split send.
+  // No need to divide because the transmission data unit is small.
   const CLA = 0xe0;
   const HASH_INPUT_FINALIZE_FULL = 0x4a;
   const apdu = Buffer.concat(
@@ -450,7 +464,7 @@ async function liquidFinalizeInputFull(transport, dectx,
   let apdu = getVarIntBuffer(dectx.vout.length);
   let errData = await sendHashInputFinalizeFullCmd(transport, 0, 0, apdu);
   if (errData.errorCode != 0x9000) {
-    console.log('fail sendHashInputStartCmd2', errData);
+    console.log('fail liquidFinalizeInputFull2', errData);
     return errData.errorCode;
   }
 
