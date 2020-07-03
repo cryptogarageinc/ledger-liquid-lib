@@ -1,6 +1,7 @@
 /* eslint-disable require-jsdoc */
 import * as cfdjs from 'cfd-js';
-import {LedgerLiquidWrapper, WalletUtxoData, SignatureData, NetworkType, AddressType, GetSignatureState, ProgressInfo} from './src/ledger-liquid-lib';
+import {LedgerLiquidWrapper, WalletUtxoData, SignatureData, NetworkType, AddressType, GetSignatureState, ProgressInfo, UsbDetectionType} from './src/ledger-liquid-lib';
+import {Device} from 'usb-detection';
 
 process.on('unhandledRejection', console.dir);
 
@@ -20,6 +21,7 @@ let authPubKey = ''; // 04b85b0e5f5b41f1a95bbf9a83edd95c741223c6d9dc5fe607de18f0
 let setIssuanceToTop = 0;
 let setReissuanceToTop = 0;
 let connectionTest = false;
+let connectionMonitoringTest = false;
 let connectDevice = '';
 let getLedgerPath = true;
 let mnemonic = '';
@@ -57,6 +59,8 @@ for (let i = 2; i < process.argv.length; i++) {
       signedTest = true;
     } else if (process.argv[i] === '-tc') {
       connectionTest = true;
+    } else if (process.argv[i] === '-mc') {
+      connectionMonitoringTest = true;
     } else if (process.argv[i] === '-a') {
       setAuthorization = true;
     } else if (process.argv[i] === '-dp') {
@@ -722,6 +726,12 @@ async function cancelWaiting(lib: LedgerLiquidWrapper) {
   }
 }
 
+async function testNotifyFunction(state: UsbDetectionType,
+    device: Device) {
+  console.log('notify: ', state, ' device:', device);
+  await sleep(100);
+}
+
 async function execConnectionTest() {
   // connect wait test
   const liquidLib = new LedgerLiquidWrapper(networkType);
@@ -731,7 +741,7 @@ async function execConnectionTest() {
       await cancelWaiting(liquidLib);
     }, 1000);
   }
-  const devListResult = await liquidLib.getDeviceList();
+  const devListResult = await LedgerLiquidWrapper.getDeviceList();
   if (devListResult.success) {
     for (const desc of devListResult.deviceList) {
       console.log('connect device :', desc);
@@ -740,9 +750,13 @@ async function execConnectionTest() {
     console.log('getDeviceList error. ', devListResult);
   }
 
+  LedgerLiquidWrapper.startUsbDetectMonitoring();
+  LedgerLiquidWrapper.registerUsbDetectListener(
+      testNotifyFunction);
   let connRet = await liquidLib.connect(60, connectDevice);
   if (!connRet.success) {
     console.log('connection fail.(1)', connRet);
+    LedgerLiquidWrapper.finishUsbDetectMonitoring();
     return;
   }
   if (asyncConnectCheck) {
@@ -794,6 +808,81 @@ async function execConnectionTest() {
     await sleep(1000);
   }
   await liquidLib.disconnect();
+  LedgerLiquidWrapper.finishUsbDetectMonitoring();
+}
+
+async function execMonitoringConnectionTest() {
+  const liquidLib = new LedgerLiquidWrapper(networkType);
+  let isError = false;
+  const checkAndConnect = async function() {
+    console.log('reconnect start.');
+    const connRet = await liquidLib.connect(0, connectDevice);
+    if (!connRet.success) {
+      console.log('connection fail.', connRet);
+      if (connRet.disconnect) {
+        console.log('wait connecting...');
+      } else {
+        isError = true;
+      }
+    } else {
+      console.log('reconnect success.');
+      console.log('current application:', liquidLib.getCurrentApplication());
+      console.log('last connect info  :', liquidLib.getLastConnectionInfo());
+    }
+  };
+  const checkConnect = async function() {
+    const connCheckRet = await liquidLib.isConnected();
+    if (connCheckRet.success) {
+      // do nothing
+    } else if (connCheckRet.errorMessage === 'connection fail.') {
+      console.log('disconnect. wait connecting...');
+    } else {
+      console.log('isConnected fail.(3)', connCheckRet);
+      // throw new Error('connection fail.');
+      isError = true;
+    }
+  };
+  const testMonitoringNotify = async function(
+      state: UsbDetectionType, device: Device) {
+    console.log('notify: ', state, ' device:', device);
+    if (state == UsbDetectionType.Add) {
+      setTimeout(async () => {
+        checkAndConnect();
+      }, 200);
+    } else if (state == UsbDetectionType.Remove) {
+      setTimeout(async () => {
+        checkConnect();
+      }, 200);
+    }
+  };
+
+  const devListResult = await LedgerLiquidWrapper.getDeviceList();
+  if (devListResult.success) {
+    for (const desc of devListResult.deviceList) {
+      console.log('connect device :', desc);
+    }
+  } else {
+    console.log('getDeviceList error. ', devListResult);
+  }
+
+  LedgerLiquidWrapper.startUsbDetectMonitoring();
+  LedgerLiquidWrapper.registerUsbDetectListener(testMonitoringNotify);
+  const connRet = await liquidLib.connect(60, connectDevice);
+  if (!connRet.success) {
+    console.log('connection fail.(1)', connRet);
+    return;
+  }
+  console.log('current application:', liquidLib.getCurrentApplication());
+  console.log('last connect info  :', liquidLib.getLastConnectionInfo());
+  for (let connTestCount = 0; connTestCount < 60; ++connTestCount) {
+    if (isError) break;
+    await sleep(1000);
+  }
+  if (isError) {
+    console.log('connection fail on error.');
+  }
+  await liquidLib.disconnect();
+  LedgerLiquidWrapper.finishUsbDetectMonitoring();
 }
 
 async function example() {
@@ -1803,6 +1892,8 @@ if (setAuthorization) {
   execBip32PathTest();
 } else if (connectionTest) {
   execConnectionTest();
+} else if (connectionMonitoringTest) {
+  execMonitoringConnectionTest();
 } else if ((!signTarget) && (!txData)) {
   if (!continousCount) {
     example();

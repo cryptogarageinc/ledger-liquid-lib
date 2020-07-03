@@ -1,7 +1,9 @@
 /* eslint-disable require-jsdoc */
 // import * as TransportNodeHid from '@ledgerhq/hw-transport-node-hid';
 const TransportNodeHid = require('@ledgerhq/hw-transport-node-hid').default;
+const LedgerDeviceInfo = require('@ledgerhq/devices');
 const cfdjs = require('cfd-js');
+const usbDetect = require('usb-detection');
 
 function convertErrorCode(buf) {
   return buf.readUInt16BE();
@@ -766,6 +768,38 @@ const getSignatureState = {
   GetSignature: 'getSignature',
 };
 
+const usbDetectionType = {
+  Add: 'add',
+  Remove: 'remove',
+};
+
+let isStartMonitoring = false;
+const notifyFunctionList = [];
+
+function connectionNotification(type, deviceInfo) {
+  const vendorId = deviceInfo.vendorId;
+  if (LedgerDeviceInfo.ledgerUSBVendorId != vendorId) {
+    return;
+  }
+  if (deviceInfo.productId != 1) { // ledger top view
+    return;
+  }
+
+  if (notifyFunctionList) {
+    for (const func of notifyFunctionList) {
+      func(type, deviceInfo);
+    }
+  }
+}
+
+function detachDetectedUsb(device) {
+  connectionNotification(usbDetectionType.Remove, device);
+}
+
+function attachDetectedUsb(device) {
+  connectionNotification(usbDetectionType.Add, device);
+}
+
 const ledgerLiquidWrapper = class LedgerLiquidWrapper {
   constructor(networkType, checkApplication = false) {
     this.transport = undefined;
@@ -806,24 +840,27 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
     };
   }
 
-  getCurrentApplication() {
-    if (this.currentApplication === applicationType.LiquidV1) {
-      return currentApplicationType.LiquidHeadless;
-    } else if (this.currentApplication === applicationType.Regtest) {
-      return currentApplicationType.LiquidTestHeadless;
-    } else {
-      return currentApplicationType.Empty;
+  static startUsbDetectMonitoring() {
+    if (!isStartMonitoring) {
+      usbDetect.startMonitoring();
+      isStartMonitoring = true;
+      usbDetect.on('remove', detachDetectedUsb);
+      usbDetect.on('add', attachDetectedUsb);
+      // usbDetect.on('change', changeDetectedUsb);
     }
   }
 
-  getLastConnectionInfo() {
-    return {
-      currentDevicePath: this.currentDevicePath,
-      lastConnectTime: this.lastConnectTime,
-    };
+  static finishUsbDetectMonitoring() {
+    if (isStartMonitoring) {
+      usbDetect.stopMonitoring();
+    }
   }
 
-  async getDeviceList() {
+  static registerUsbDetectListener(func) {
+    notifyFunctionList.push(func);
+  }
+
+  static async getDeviceList() {
     let devList = [];
     let ecode = disconnectEcode;
     let errMsg = 'other error';
@@ -841,6 +878,23 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       errorMessage: errMsg,
       disconnect: false,
       deviceList: devList,
+    };
+  }
+
+  getCurrentApplication() {
+    if (this.currentApplication === applicationType.LiquidV1) {
+      return currentApplicationType.LiquidHeadless;
+    } else if (this.currentApplication === applicationType.Regtest) {
+      return currentApplicationType.LiquidTestHeadless;
+    } else {
+      return currentApplicationType.Empty;
+    }
+  }
+
+  getLastConnectionInfo() {
+    return {
+      currentDevicePath: this.currentDevicePath,
+      lastConnectTime: this.lastConnectTime,
     };
   }
 
@@ -887,15 +941,18 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
             ecode = ret.errorCode;
             if (ecode === 0x9000) {
               this.transport = transport;
+              // this.transport.on('disconnect', this.disconnectNotification);
               this.currentApplication = ret.application;
               this.lastConnectCheckTime = Date.now();
               if (!path) {
+                console.log('list start');
                 const devList = await TransportNodeHid.list();
+                console.log('list end');
                 this.currentDevicePath = (!devList) ? '' : devList[0];
               } else {
                 this.currentDevicePath = path;
               }
-              this.lastConnectTime = Date.now();
+              this.lastConnectTime = this.lastConnectCheckTime;
               break;
             } else if (ecode !== disconnectEcode) {
               console.log('illegal error. ', ecode);
@@ -1588,3 +1645,6 @@ module.exports.GetSignatureState = getSignatureState;
 module.exports.GetSignatureState.AnalyzeUtxo = getSignatureState.AnalyzeUtxo;
 module.exports.GetSignatureState.InputTx = getSignatureState.InputTx;
 module.exports.GetSignatureState.GetSignature = getSignatureState.GetSignature;
+module.exports.UsbDetectionType = usbDetectionType;
+module.exports.UsbDetectionType.Add = usbDetectionType.Add;
+module.exports.UsbDetectionType.Remove = usbDetectionType.Remove;
