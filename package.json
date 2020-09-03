@@ -28,6 +28,7 @@
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^2.34.0",
     "@typescript-eslint/parser": "^2.34.0",
+    "bl": "^4.0.3",
     "eslint": "^7.5.0",
     "eslint-config-google": "*",
     "lodash": ">=4.17.19",
