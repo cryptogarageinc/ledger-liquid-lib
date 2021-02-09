@@ -141,7 +141,7 @@ export class LedgerLiquidWrapper {
    * @param callback callback function.
    */
   static registerUsbDetectListener(
-    callback: (state: ConnectionNotifyState, device: Device) => void): void
+    callback: (state: UsbDetectionType, device: Device) => void): void
 
   /**
    * get usb device list.
