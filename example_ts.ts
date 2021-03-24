@@ -988,7 +988,7 @@ async function example() {
     valueCommitment: string;
     abf: string;
     vbf: string;
-  };
+  }
   const pathList: PathData[] = [];
   const dummyPathList: PathData[] = [];
   const reissuePathList: PathData[] = [];
@@ -1703,7 +1703,7 @@ async function example() {
     }
   }
   await liquidLib.disconnect();
-};
+}
 
 async function execBip32PathTest() {
   // connect wait test
