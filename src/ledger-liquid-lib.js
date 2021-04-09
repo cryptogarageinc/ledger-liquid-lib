@@ -793,11 +793,15 @@ function connectionNotification(type, deviceInfo) {
 }
 
 function detachDetectedUsb(device) {
-  connectionNotification(usbDetectionType.Remove, device);
+  if (isStartMonitoring) {
+    connectionNotification(usbDetectionType.Remove, device);
+  }
 }
 
 function attachDetectedUsb(device) {
-  connectionNotification(usbDetectionType.Add, device);
+  if (isStartMonitoring) {
+    connectionNotification(usbDetectionType.Add, device);
+  }
 }
 
 const ledgerLiquidWrapper = class LedgerLiquidWrapper {
@@ -964,6 +968,8 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
             const errText = e.toString();
             if (errText.indexOf('DisconnectedDevice: Cannot write to HID device') >= 0) {
               // disconnect error
+            } else if (errText.indexOf('TypeError: Cannot write to hid device') >= 0) {
+              // disconnect error
             } else if (errText.indexOf('TransportError: NoDevice') >= 0) {
               // device connect error
             } else if (errText.indexOf('cannot open device with path') >= 0) {
@@ -1053,6 +1059,8 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
       } catch (e) {
         const errText = e.toString();
         if (errText.indexOf('DisconnectedDevice: Cannot write to HID device') >= 0) {
+          // disconnect error
+        } else if (errText.indexOf('TypeError: Cannot write to hid device') >= 0) {
           // disconnect error
         } else if (errText.indexOf('TransportError: NoDevice') >= 0) {
           // device connect error
