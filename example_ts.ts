@@ -815,13 +815,14 @@ async function execMonitoringConnectionTest() {
   const liquidLib = new LedgerLiquidWrapper(networkType);
   let isError = false;
   const checkAndConnect = async function() {
-    console.log('reconnect start.');
+    console.log('reconnect checking.');
     if (liquidLib.isAccessing()) {
       setTimeout(async () => {
         checkAndConnect();
       }, 200);
       return;
     }
+    console.log('reconnect start.');
     const connRet = await liquidLib.connect(0, connectDevice);
     if (!connRet.success) {
       console.log('connection fail.', connRet);
@@ -1481,8 +1482,8 @@ async function example() {
   }
 
   if (pathList.length > 0 && tx2Data.txouts) {
-    let addrCounter = 1;
-    for (var asset in assetMap) {
+    const addrCounter = 1;
+    for (const asset in assetMap) {
       if (asset1 in assetMap) {
         const totalAsset = assetMap[asset1];
         const amount = (asset == asset1) ?
@@ -1501,17 +1502,19 @@ async function example() {
   }
   if (reissueTokenPathList.length > 0 && tx2Data.txouts) {
     let addrCounter = 0;
-    for (var asset in tokenAssetMap) {
-      tx2Data.txouts.push({
-        address: reissueTokenPathList[addrCounter].address,
-        amount: tokenAssetMap[asset],
-        asset,
-      });
-      if (blindReqData.txoutConfidentialAddresses) {
-        blindReqData.txoutConfidentialAddresses.push(
-            reissueTokenPathList[addrCounter].confidentialAddress);
+    for (const asset in tokenAssetMap) {
+      if (asset) {
+        tx2Data.txouts.push({
+          address: reissueTokenPathList[addrCounter].address,
+          amount: tokenAssetMap[asset],
+          asset,
+        });
+        if (blindReqData.txoutConfidentialAddresses) {
+          blindReqData.txoutConfidentialAddresses.push(
+              reissueTokenPathList[addrCounter].confidentialAddress);
+        }
+        addrCounter += 1;
       }
-      addrCounter += 1;
     }
   }
   const tx2 = cfdjs.ElementsCreateRawTransaction(tx2Data);
