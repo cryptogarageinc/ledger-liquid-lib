@@ -816,6 +816,12 @@ async function execMonitoringConnectionTest() {
   let isError = false;
   const checkAndConnect = async function() {
     console.log('reconnect start.');
+    if (liquidLib.isAccessing()) {
+      setTimeout(async () => {
+        checkAndConnect();
+      }, 200);
+      return;
+    }
     const connRet = await liquidLib.connect(0, connectDevice);
     if (!connRet.success) {
       console.log('connection fail.', connRet);
