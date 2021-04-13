@@ -856,6 +856,7 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
 
   static finishUsbDetectMonitoring() {
     if (isStartMonitoring) {
+      isStartMonitoring = false;
       usbDetect.stopMonitoring();
     }
   }

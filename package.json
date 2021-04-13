@@ -1,6 +1,6 @@
 {
   "name": "ledger-liquid-lib",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Ledger Hardware Wallet Liquid Wrapper Library",
   "keywords": [
     "Ledger",
