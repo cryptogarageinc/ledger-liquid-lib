@@ -815,6 +815,13 @@ async function execMonitoringConnectionTest() {
   const liquidLib = new LedgerLiquidWrapper(networkType);
   let isError = false;
   const checkAndConnect = async function() {
+    console.log('reconnect checking.');
+    if (liquidLib.isAccessing()) {
+      setTimeout(async () => {
+        checkAndConnect();
+      }, 200);
+      return;
+    }
     console.log('reconnect start.');
     const connRet = await liquidLib.connect(0, connectDevice);
     if (!connRet.success) {
@@ -988,7 +995,7 @@ async function example() {
     valueCommitment: string;
     abf: string;
     vbf: string;
-  };
+  }
   const pathList: PathData[] = [];
   const dummyPathList: PathData[] = [];
   const reissuePathList: PathData[] = [];
@@ -1124,6 +1131,7 @@ async function example() {
   const empty256 = '0000000000000000000000000000000000000000000000000000000000000000';
   const inputAmount = 5000000n;
   const inputAmount2 = 5000000n;
+  let firstInputAmount = inputAmount;
   const tx1Data = {
     version: 2,
     locktime: 0,
@@ -1134,7 +1142,7 @@ async function example() {
     }],
     txouts: [{
       address: pathList[0].address,
-      amount: inputAmount,
+      amount: inputAmount - 50000n,
       asset: asset1,
     }],
     fee: {
@@ -1142,15 +1150,6 @@ async function example() {
       asset: asset1,
     },
   };
-  if (tx1InputCount > 1) {
-    for (let i = 1; i < tx1InputCount; ++i) {
-      tx1Data.txins.push({
-        txid: dummyTxid1,
-        vout: i,
-        sequence: 4294967295,
-      });
-    }
-  }
   if (pathList.length > 1) {
     for (let i = 1; i < pathList.length; ++i) {
       const pathData = pathList[i];
@@ -1159,6 +1158,7 @@ async function example() {
         amount: inputAmount2,
         asset: asset1,
       });
+      firstInputAmount += inputAmount2;
     }
     if (dummyPathList.length > 0) {
       for (let i = 1; i < dummyPathList.length; ++i) {
@@ -1168,7 +1168,18 @@ async function example() {
           amount: inputAmount2,
           asset: asset1,
         });
+        firstInputAmount += inputAmount2;
       }
+    }
+  }
+  if (tx1InputCount > 1) {
+    for (let i = 1; i < tx1InputCount; ++i) {
+      tx1Data.txins.push({
+        txid: dummyTxid1,
+        vout: i,
+        sequence: 4294967295,
+      });
+      firstInputAmount -= inputAmount2;
     }
   }
   let tx1;
@@ -1221,7 +1232,7 @@ async function example() {
         asset: asset1,
         blindFactor: empty256,
         assetBlindFactor: empty256,
-        amount: inputAmount,
+        amount: firstInputAmount,
       }],
       txoutConfidentialAddresses: [],
       issuances: [],
@@ -1318,6 +1329,7 @@ async function example() {
             if (pathData.vout === data.index) {
               pathData.abf = data.assetBlindFactor;
               pathData.vbf = data.blindFactor;
+              pathData.amount = data.amount;
               isFind = true;
               break;
             }
@@ -1359,8 +1371,9 @@ async function example() {
     txoutConfidentialAddresses: [pathList[0].confidentialAddress],
     issuances: [],
   };
-  let totalAsset = 0n;
   let startOffset = 1;
+  const assetMap: {[key: string]: bigint} = {};
+  const tokenAssetMap: {[key: string]: bigint} = {};
   if ((setReissuanceToTop > setIssuanceToTop) &&
       (reissuePathList.length > 0)) {
     startOffset = 0;
@@ -1373,11 +1386,15 @@ async function example() {
         vout: pathData.vout,
         sequence: 0xffffffff,
       });
-      totalAsset += pathData.amount;
+      const asset =
+        (pathData.issuanceData && pathData.issuanceData[0]) ?
+          pathData.issuanceData[0].token || '' : asset1;
+      if (asset in tokenAssetMap) {
+        tokenAssetMap[asset] = tokenAssetMap[asset] + BigInt(pathData.amount);
+      } else {
+        tokenAssetMap[asset] = BigInt(pathData.amount);
+      }
       if (blindReqData.txins) {
-        const asset =
-          (pathData.issuanceData && pathData.issuanceData[0]) ?
-            pathData.issuanceData[0].token : asset1;
         blindReqData.txins.push({
           txid: dectx1.txid,
           vout: pathData.vout,
@@ -1405,11 +1422,17 @@ async function example() {
         vout: pathData.vout,
         sequence: 0xffffffff,
       });
-      totalAsset += pathData.amount;
+      const asset =
+        (pathData.issuanceData && pathData.issuanceData[0]) ?
+          pathData.issuanceData[0].token || '' : asset1;
+      if (i == 0) {
+        // already txout set.
+      } else if (asset in assetMap) {
+        assetMap[asset] = assetMap[asset] + BigInt(pathData.amount);
+      } else {
+        assetMap[asset] = BigInt(pathData.amount);
+      }
       if (blindReqData.txins) {
-        const asset =
-          (pathData.issuanceData && pathData.issuanceData[0]) ?
-            pathData.issuanceData[0].token : asset1;
         blindReqData.txins.push({
           txid: dectx1.txid,
           vout: pathData.vout,
@@ -1428,11 +1451,15 @@ async function example() {
           vout: pathData.vout,
           sequence: 0xffffffff,
         });
-        totalAsset += pathData.amount;
+        const asset =
+          (pathData.issuanceData && pathData.issuanceData[0]) ?
+            pathData.issuanceData[0].token || '' : asset1;
+        if (asset in tokenAssetMap) {
+          tokenAssetMap[asset] = tokenAssetMap[asset] + BigInt(pathData.amount);
+        } else {
+          tokenAssetMap[asset] = BigInt(pathData.amount);
+        }
         if (blindReqData.txins) {
-          const asset =
-            (pathData.issuanceData && pathData.issuanceData[0]) ?
-              pathData.issuanceData[0].token : asset1;
           blindReqData.txins.push({
             txid: dectx1.txid,
             vout: pathData.vout,
@@ -1453,31 +1480,40 @@ async function example() {
       }
     }
   }
+
   if (pathList.length > 0 && tx2Data.txouts) {
-    tx2Data.txouts.push({
-      address: pathList[1].address,
-      amount: totalAsset - tx2Data.fee.amount,
-      asset: asset1,
-    });
-    if (blindReqData.txoutConfidentialAddresses) {
-      blindReqData.txoutConfidentialAddresses.push(
-          pathList[1].confidentialAddress);
-    }
-  }
-  if (reissueTokenPathList.length > 0 && tx2Data.txouts) {
-    for (let i = 0; i < reissueTokenPathList.length; ++i) {
-      if (reissueTokenPathList[i].issuanceData.length > 0 &&
-        reissueTokenPathList[i].issuanceData[0]) {
-        const token = reissueTokenPathList[i].issuanceData[0].token;
+    const addrCounter = 1;
+    for (const asset in assetMap) {
+      if (asset1 in assetMap) {
+        const totalAsset = assetMap[asset1];
+        const amount = (asset == asset1) ?
+            totalAsset - BigInt(tx2Data.fee.amount) : totalAsset;
         tx2Data.txouts.push({
-          address: reissueTokenPathList[i].address,
-          amount: reissueTokenPathList[i].amount,
-          asset: (token) ? token : '',
+          address: pathList[addrCounter].address,
+          amount,
+          asset,
         });
         if (blindReqData.txoutConfidentialAddresses) {
           blindReqData.txoutConfidentialAddresses.push(
-              reissueTokenPathList[i].confidentialAddress);
+              pathList[addrCounter].confidentialAddress);
         }
+      }
+    }
+  }
+  if (reissueTokenPathList.length > 0 && tx2Data.txouts) {
+    let addrCounter = 0;
+    for (const asset in tokenAssetMap) {
+      if (asset) {
+        tx2Data.txouts.push({
+          address: reissueTokenPathList[addrCounter].address,
+          amount: tokenAssetMap[asset],
+          asset,
+        });
+        if (blindReqData.txoutConfidentialAddresses) {
+          blindReqData.txoutConfidentialAddresses.push(
+              reissueTokenPathList[addrCounter].confidentialAddress);
+        }
+        addrCounter += 1;
       }
     }
   }
@@ -1703,7 +1739,7 @@ async function example() {
     }
   }
   await liquidLib.disconnect();
-};
+}
 
 async function execBip32PathTest() {
   // connect wait test

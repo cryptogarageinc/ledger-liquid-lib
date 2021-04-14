@@ -1,6 +1,6 @@
 {
   "name": "ledger-liquid-lib",
-  "version": "0.0.32",
+  "version": "0.0.33-napi.0",
   "description": "Ledger Hardware Wallet Liquid Wrapper Library",
   "keywords": [
     "Ledger",
@@ -20,23 +20,22 @@
   "types": "./src/ledger-liquid-lib.d.ts",
   "dependencies": {
     "@ledgerhq/hw-transport-node-hid": "^5.19.1",
-    "@types/node": "^14.0.24",
-    "big-integer": "^1.6.26",
-    "cfd-js": "github:cryptogarageinc/cfd-js#semver:^0.2.7",
+    "@types/node": "^14.14.35",
+    "big-integer": "^1.6.48",
+    "cfd-js": "github:cryptogarageinc/cfd-js#semver:^0.3.5",
     "usb-detection": "^4.10.0"
   },
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^2.34.0",
-    "@typescript-eslint/parser": "^2.34.0",
-    "bl": "^4.0.3",
-    "eslint": "^7.5.0",
+    "@typescript-eslint/eslint-plugin": "^4.19.0",
+    "@typescript-eslint/parser": "^4.19.0",
+    "eslint": "^7.22.0",
     "eslint-config-google": "*",
-    "lodash": ">=4.17.19",
+    "ini": ">=1.3.6",
     "npm-run-all": "^4.1.5",
-    "run-script-os": "^1.1.1",
-    "ts-node": "^8.10.2",
-    "typescript": "^3.9.7",
-    "typescript-json-schema": "^0.42.0"
+    "run-script-os": "^1.1.5",
+    "ts-node": "^9.1.1",
+    "typescript": "^4.2.3",
+    "typescript-json-schema": "^0.50.0"
   },
   "scripts": {
     "ts_example": "ts-node example_ts.ts",

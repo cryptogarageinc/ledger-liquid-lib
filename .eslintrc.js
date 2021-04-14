@@ -6,8 +6,8 @@ module.exports = {
   },
   'extends': [
     'google',
-    "plugin:@typescript-eslint/eslint-recommended",
-    "plugin:@typescript-eslint/recommended",
+    'plugin:@typescript-eslint/eslint-recommended',
+    'plugin:@typescript-eslint/recommended',
   ],
   'globals': {
     'Atomics': 'readonly',
@@ -16,18 +16,18 @@ module.exports = {
   'parserOptions': {
     'ecmaVersion': 2018,
   },
-  "plugins": [
-    "@typescript-eslint",
+  'plugins': [
+    '@typescript-eslint',
   ],
   'rules': {
     'new-cap': ['error', {
-      'capIsNew': false,   // cfd-js function is set because it is PascalCase.
+      'capIsNew': false, // cfd-js function is set because it is PascalCase.
     }],
     'max-len': ['error', {
       'ignoreComments': true,
       'ignoreStrings': true,
       'ignoreTemplateLiterals': true,
-      'ignorePattern': "^export function .+Response;$", // for index.d.ts (auto generated)
+      'ignorePattern': '^export function .+Response;$', // for index.d.ts (auto generated)
     }],
     '@typescript-eslint/no-var-requires': 0,
     '@typescript-eslint/no-empty-function': 0,
