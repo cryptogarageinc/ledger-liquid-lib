@@ -1,5 +1,15 @@
 /* eslint-disable require-jsdoc */
-import {Device} from 'usb-detection';
+
+// import {Device} from 'usb-detection';
+export interface Device {
+  locationId: number;
+  vendorId: number;
+  productId: number;
+  deviceName: string;
+  manufacturer: string;
+  serialNumber: string;
+  deviceAddress: number;
+}
 
 export enum NetworkType {
   LiquidV1 = 'liquidv1',

@@ -3,7 +3,7 @@
 const TransportNodeHid = require('@ledgerhq/hw-transport-node-hid').default;
 const LedgerDeviceInfo = require('@ledgerhq/devices');
 const cfdjs = require('cfd-js');
-const usbDetect = require('usb-detection');
+const usb = require('usb');
 
 function convertErrorCode(buf) {
   return buf.readUInt16BE();
@@ -775,11 +775,27 @@ const usbDetectionType = {
 
 let isStartMonitoring = false;
 const notifyFunctionList = [];
+const usbTimeout = 5000;
 
-function connectionNotification(type, deviceInfo) {
+function connectionNotification(type, usbDevice) {
+  const deviceInfo = {
+    locationId: 0, // unknown
+    vendorId: usbDevice.deviceDescriptor.idVendor,
+    productId: usbDevice.deviceDescriptor.idProduct,
+    deviceName: '', // SPDRP_FRIENDLYNAME or SPDRP_DEVICEDESC
+    manufacturer: '', // SPDRP_MFG
+    serialNumber: '', // <device-ID>\<instance-specific-ID>
+    deviceAddress: usbDevice.deviceAddress,
+  };
+  // console.log(`## connectionNotification: ${type}: `, deviceInfo);
+  // console.log(`## usbDevice: `, usbDevice);
   const vendorId = deviceInfo.vendorId;
   if (LedgerDeviceInfo.ledgerUSBVendorId != vendorId) {
     return;
+  }
+  if (usbDevice.timeout < usbTimeout) {
+    // The ledger device may take over 2000msec to respond.
+    usbDevice.timeout = usbTimeout;
   }
   if (deviceInfo.productId != 1) { // ledger top view
     return;
@@ -846,18 +862,18 @@ const ledgerLiquidWrapper = class LedgerLiquidWrapper {
 
   static startUsbDetectMonitoring() {
     if (!isStartMonitoring) {
-      usbDetect.startMonitoring();
       isStartMonitoring = true;
-      usbDetect.on('remove', detachDetectedUsb);
-      usbDetect.on('add', attachDetectedUsb);
-      // usbDetect.on('change', changeDetectedUsb);
+      usb.on('detach', detachDetectedUsb);
+      usb.on('attach', attachDetectedUsb);
+      // usb.setDebugLevel(4); // debug level
     }
   }
 
   static finishUsbDetectMonitoring() {
     if (isStartMonitoring) {
       isStartMonitoring = false;
-      usbDetect.stopMonitoring();
+      usb.removeListener('detach', detachDetectedUsb);
+      usb.removeListener('attach', attachDetectedUsb);
     }
   }
 
