@@ -61,8 +61,8 @@
     // "emitDecoratorMetadata": true,         /* Enables experimental support for emitting type metadata for decorators. */
 
     "baseUrl": "./",
-    "paths": {"@ledgerhq/hw-transport-node-hid": ["types/@ledgerhq/hw-transport-node-hid"]},
-    "typeRoots": ["types", "node_modules/@types"],
+    "paths": {"@ledgerhq/hw-transport-node-hid": ["node_modules/@ledgerhq/hw-transport-node-hid"]},
+    "typeRoots": ["node_modules/@types"],
 
     /* Advanced Options */
     "forceConsistentCasingInFileNames": true  /* Disallow inconsistently-cased references to the same file. */
