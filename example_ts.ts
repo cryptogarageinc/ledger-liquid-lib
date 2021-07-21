@@ -31,6 +31,7 @@ let dumpTx = false;
 let txData = '';
 let signTarget = '';
 let fixedTest = false;
+let peggedTxTest = false;
 let waitCancelCount = 0;
 let currentWaitCancelCount = 0;
 let dumpPubkeyMode = false;
@@ -71,6 +72,8 @@ for (let i = 2; i < process.argv.length; i++) {
       dumpTx = true;
     } else if (process.argv[i] === '-tcwc') {
       waitCancelCount = 30;
+    } else if (process.argv[i] === '-peg') {
+      peggedTxTest = true;
     } else if (process.argv[i] === '-acc') {
       asyncConnectCheck = true;
       asyncCommandCheck = true;
@@ -1920,10 +1923,54 @@ async function exampleMultiTest() {
   }
 }
 
+async function execPeggedTest() {
+  const txHex = '02000000010103ae7c6c1dac6f9b83c100e5bbad2e6262ae3f1932ede271150aa0613e7a50990000004000ffffffff030125b251070e29ca19043cf33ccd7324e2ddab03ecc4ae0b5e77c4fc0e5cf6c95a010000000000079b440016001475f7cda67f3f421152d438573282f16e1ec394660125b251070e29ca19043cf33ccd7324e2ddab03ecc4ae0b5e77c4fc0e5cf6c95a0100000000000001f400000125b251070e29ca19043cf33ccd7324e2ddab03ecc4ae0b5e77c4fc0e5cf6c95a01000000000007a120009e6a2006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f17a914a722b257cabc3b8e7d46f8fb293f893f368219da872103700dcb030588ed828d85f645b48971de0d31e8c0244da46710d18681627f5a4a4101044e949dcf8ac2daac82a3e4999ee28e2711661793570c4daab34cd38d76a425d6bfe102f3fea8be12109925fad32c78b65afea4de1d17a826e7375d0e2d0066000000000000000608583e0f00000000002025b251070e29ca19043cf33ccd7324e2ddab03ecc4ae0b5e77c4fc0e5cf6c95a2006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f160014ac15c9bd0ed1641999c41fef64fb3c9ff48ce29dc002000000000101424aeb8cd9e48964d693f0395d4c228064de9c878b0c758f4db3d5c0b33059980100000000ffffffff01583e0f000000000017a91472c44f957fc011d97e3406667dca5b1c930c4026870247304402206ad339157f0eacb080eb4f956253582adab6c6381a314d6f2a7b9d22aa10f21c0220422c64d1a4f7f1d70b409a4482bb9fa07aa206a8110eed7794f91f91430fd9d6012103a075171877c4e93df48a3f9a078b12863e1053c3f62315abe7b8f23333c1c108000000009700000020fe3b574c1ce6d5cb68fc518e86f7976e599fafc0a2e5754aace7ca16d97a7c78ef9325b8d4f0a4921e060fc5e71435f46a18fa339688142cd4b028c8488c9f8dd1495b5dffff7f200200000002000000024a180a6822abffc3b1080c49016899c6dac25083936df14af12f58db11958ef27926299350fdc2f4d0da1d4f0fbbd3789d29f9dc016358ae42463c0cebf393f30105000000000000';
+
+  const signUtxoList = [
+    {
+      txid: '99507a3e61a00a1571e2ed32193fae62622eadbbe500c1839b6fac1d6c7cae03',
+      vout: 0,
+      bip32Path: 'm/44\'/1776\'/1\'/0/12',
+      amount: 1000000 - 1000,
+      // valueCommitment: '09606bfea1ac0b8e59dac55d9ef37e6f43cca14794224f14207f854aa924fb8a77',
+      descriptor: '',
+    },
+  ];
+
+  const mainchainNwType = (networkType === 'liquidv1') ? 'mainnet' : 'regtest';
+  const liquidLib = new LedgerLiquidWrapper(networkType);
+  const connRet = await liquidLib.connect(0, '');
+  if (!connRet.success) {
+    console.log('connection failed. ', connRet);
+    return '';
+  }
+  const pubkeyInfo1 = await liquidLib.getWalletPublicKey(
+      signUtxoList[0].bip32Path);
+  if (!pubkeyInfo1.success) {
+    console.log('connection failed. ', connRet);
+    await liquidLib.disconnect();
+    return '';
+  }
+  signUtxoList[0].descriptor = `wpkh(${pubkeyInfo1.publicKey})`;
+
+  console.log('signUtxoList:', signUtxoList);
+  const tx = await execSign(liquidLib, txHex, signUtxoList, '');
+  console.log('*** signed tx hex ***\n', tx);
+  if (dumpTx && tx) {
+    const decSignedTx = cfdjs.ElementsDecodeRawTransaction({
+      hex: tx, network: networkType,
+      mainchainNetwork: mainchainNwType});
+    console.log('*** Signed Tx ***\n', JSON.stringify(decSignedTx, null, '  '));
+  }
+  await liquidLib.disconnect();
+}
+
 if (setAuthorization) {
   setAuthKeyTest();
 } else if (fixedTest) {
   execFixedTest();
+} else if (peggedTxTest) {
+  execPeggedTest();
 } else if (dumpPubkeyMode) {
   execBip32PathTest();
 } else if (connectionTest) {
