@@ -320,7 +320,7 @@ async function sendHashInputFinalizeFullCmd(transport, p1, p2, data) {
   // No need to divide because the transmission data unit is small.
   const CLA = 0xe0;
   const HASH_INPUT_FINALIZE_FULL = 0x4a;
-  if (data.length < 0xa0) {
+  if (data.length < 0xc0) {
     const apdu = Buffer.concat(
         [Buffer.from([CLA, HASH_INPUT_FINALIZE_FULL, p1, p2]),
           Buffer.from([data.length]), data]);
