@@ -36,7 +36,7 @@ function getVarIntBuffer(num) {
   } else {
     buf = Buffer.from([0xff, 0, 0, 0, 0, 0, 0, 0, 0]);
     const high = Math.floor(num / 0x100000000);
-    const low = num & 0xffffffff;
+    const low = num % 0x100000000;
     buf.writeUInt32LE(low, 1);
     buf.writeUInt32LE(high, 5);
   }
@@ -50,12 +50,12 @@ function convertValueFromAmount(amount) {
   let low;
   if (typeof amount === 'bigint') {
     const bigHigh = (amount > 0xffffffffn) ? (amount / 0x100000000n) : 0n;
-    const bigLow = amount & 0xffffffffn;
+    const bigLow = amount % 0x100000000n;
     high = Number(bigHigh);
     low = Number(bigLow);
   } else {
     high = (amount > 0xffffffff) ? Math.floor(amount / 0x100000000) : 0;
-    low = amount & 0xffffffff;
+    low = amount % 0x100000000;
   }
   value.writeUInt32BE(high, 1);
   value.writeUInt32BE(low, 5);
