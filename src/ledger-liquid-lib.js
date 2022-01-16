@@ -36,7 +36,7 @@ function getVarIntBuffer(num) {
   } else {
     buf = Buffer.from([0xff, 0, 0, 0, 0, 0, 0, 0, 0]);
     const high = Math.floor(num / 0x100000000);
-    const low = num & 0xffffffff;
+    const low = num % 0x100000000;
     buf.writeUInt32LE(low, 1);
     buf.writeUInt32LE(high, 5);
   }
@@ -50,12 +50,12 @@ function convertValueFromAmount(amount) {
   let low;
   if (typeof amount === 'bigint') {
     const bigHigh = (amount > 0xffffffffn) ? (amount / 0x100000000n) : 0n;
-    const bigLow = amount & 0xffffffffn;
+    const bigLow = amount % 0x100000000n;
     high = Number(bigHigh);
     low = Number(bigLow);
   } else {
     high = (amount > 0xffffffff) ? Math.floor(amount / 0x100000000) : 0;
-    low = amount & 0xffffffff;
+    low = amount % 0x100000000;
   }
   value.writeUInt32BE(high, 1);
   value.writeUInt32BE(low, 5);
@@ -120,6 +120,16 @@ function splitByteArray255(byteArray) {
   for (let offset = 0; offset < byteArray.length; offset += 255) {
     const maxOffset = (byteArray.length > (offset + 255)) ?
        (offset + 255) : byteArray.length;
+    array.push(byteArray.subarray(offset, maxOffset));
+  }
+  return array;
+}
+
+function splitByteArray190(byteArray) {
+  const array = [];
+  for (let offset = 0; offset < byteArray.length; offset += 190) {
+    const maxOffset = (byteArray.length > (offset + 190)) ?
+       (offset + 190) : byteArray.length;
     array.push(byteArray.subarray(offset, maxOffset));
   }
   return array;
@@ -310,18 +320,46 @@ async function sendHashInputFinalizeFullCmd(transport, p1, p2, data) {
   // No need to divide because the transmission data unit is small.
   const CLA = 0xe0;
   const HASH_INPUT_FINALIZE_FULL = 0x4a;
-  const apdu = Buffer.concat(
-      [Buffer.from([CLA, HASH_INPUT_FINALIZE_FULL, p1, p2]),
-        Buffer.from([data.length]), data]);
-  debugSendLog('sendHashInputFinalizeFullCmd send -> ', apdu);
-  const exchangeRet = await transport.exchange(apdu);
-  const result = (exchangeRet.length <= 2) ? exchangeRet :
-    exchangeRet.subarray(exchangeRet.length - 2);
-  const resultData = (exchangeRet.length <= 2) ? Buffer.alloc(0) :
-    exchangeRet.subarray(0, exchangeRet.length - 2);
-  const ecode = convertErrorCode(result);
-  if (ecode != 0x9000) {
-    // console.log('sendHashInputFinalizeFullCmd recv: ', exchangeRet.toString('hex'));
+  if (data.length < 0xa0) {
+    const apdu = Buffer.concat(
+        [Buffer.from([CLA, HASH_INPUT_FINALIZE_FULL, p1, p2]),
+          Buffer.from([data.length]), data]);
+    debugSendLog('sendHashInputFinalizeFullCmd send -> ', apdu);
+    const exchangeRet = await transport.exchange(apdu);
+    const result = (exchangeRet.length <= 2) ? exchangeRet :
+      exchangeRet.subarray(exchangeRet.length - 2);
+    const resultData = (exchangeRet.length <= 2) ? Buffer.alloc(0) :
+      exchangeRet.subarray(0, exchangeRet.length - 2);
+    const ecode = convertErrorCode(result);
+    if (ecode != 0x9000) {
+      // console.log('sendHashInputFinalizeFullCmd recv: ', exchangeRet.toString('hex'));
+    }
+    return {data: resultData, errorCode: ecode};
+  }
+
+  const dataArray = splitByteArray190(data);
+  let ecode = 0x9000;
+  let resultData = Buffer.alloc(0);
+  for (const index in dataArray) {
+    if (!dataArray[index]) {
+      continue;
+    }
+    const inputData = dataArray[index];
+    const sendP1 = ((dataArray.length - 1) == index) ? p1 : 0x00;
+    const apdu = Buffer.concat(
+        [Buffer.from([CLA, HASH_INPUT_FINALIZE_FULL, sendP1, p2]),
+          Buffer.from([inputData.length]), inputData]);
+    debugSendLog('sendHashInputFinalizeFullCmd send -> ', apdu);
+    const exchangeRet = await transport.exchange(apdu);
+    const result = (exchangeRet.length <= 2) ? exchangeRet :
+      exchangeRet.subarray(exchangeRet.length - 2);
+    resultData = (exchangeRet.length <= 2) ? Buffer.alloc(0) :
+      exchangeRet.subarray(0, exchangeRet.length - 2);
+    ecode = convertErrorCode(result);
+    if (ecode != 0x9000) {
+      // console.log('sendHashInputFinalizeFullCmd recv: ', exchangeRet.toString('hex'));
+      break;
+    }
   }
   return {data: resultData, errorCode: ecode};
 }
