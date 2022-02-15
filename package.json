@@ -22,7 +22,7 @@
     "@ledgerhq/hw-transport-node-hid": "^6.20.0",
     "@types/node": "^17.0.13",
     "big-integer": "^1.6.51",
-    "cfd-js": "github:cryptogarageinc/cfd-js#semver:^0.3.11",
+    "cfd-js": "github:cryptogarageinc/cfd-js#semver:^0.4.0",
     "usb": "^2.1.0"
   },
   "devDependencies": {
